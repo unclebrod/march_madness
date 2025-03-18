@@ -1,8 +1,12 @@
+from pathlib import Path
 from typing import Self
 
+import dill as pickle
 import jax.numpy as jnp
 import numpy as np
 import polars as pl
+
+from march_madness import OUTPUT_DIR, logger
 
 
 class LabelEncoder:
@@ -20,7 +24,7 @@ class LabelEncoder:
         else:
             raise TypeError("Input must be a Polars DataFrame, Series, or NumPy array.")
         arr = np.sort(np.unique(x_arr)).tolist()
-        self.encoding = dict(zip(arr, range(1, len(arr) + 1), strict=False))
+        self.encoding = dict(zip([None] + arr, range(0, len(arr) + 1), strict=False))
         self.is_fit = True
         return self
 
@@ -52,3 +56,17 @@ class LabelEncoder:
     @property
     def classes_(self) -> list:
         return list(self.encoding.keys())
+
+    def save(self, prefix: str, path: str = "M"):
+        save_to = OUTPUT_DIR / f"{path}/{prefix}encoder.pkl"
+        with Path(save_to).open("wb") as f:
+            pickle.dump(self, f)
+        logger.info(f"Saved encoder to {save_to}")
+
+    @classmethod
+    def load(cls, prefix: str, path: str = "M"):
+        load_from = OUTPUT_DIR / f"{path}/{prefix}encoder.pkl"
+        with Path(load_from).open("rb") as f:
+            model = pickle.load(f)
+        logger.info(f"Loaded encoder from {load_from}")
+        return model

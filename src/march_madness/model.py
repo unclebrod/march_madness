@@ -1,19 +1,22 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
+import dill as pickle
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
+import optax
 from jax import random
-from numpyro import optim
+from jax.nn import softplus
 from numpyro.infer import MCMC, NUTS, SVI, Predictive, Trace_ELBO, autoguide, initialization
 
-INFERENCE = Literal["mcmc", "svi"]
+from march_madness import OUTPUT_DIR, logger
 
 
 @dataclass
 class ModelData:
-    context: jnp.array  # fixed effects matrix (home, neutral, is_conf_tourney, is_ncaa_tourney)
+    context: jnp.array  # fixed effects matrix (is_conf_tourney, is_ncaa_tourney)
 
     n: int | None  # number of rows
     n_teams: int | None  # number of unique teams
@@ -22,15 +25,119 @@ class ModelData:
     season: jnp.ndarray  # season encoding
     team1: jnp.ndarray  # team1 encoding
     team2: jnp.ndarray  # team2 encoding
-    minutes: jnp.ndarray  # game minutes
+    loc: jnp.ndarray  # game location encoding (home, away, neutral)
 
-    is_neutral: jnp.ndarray  # is the game played on a neutral court?
-    is_team1_home: jnp.ndarray  # is team1 the home team?
-    is_team2_home: jnp.ndarray  # is team2 the home team?
+    minutes: jnp.ndarray  # game minutes
+    is_team1_home: jnp.ndarray  # is team1 the home team
+    is_team2_home: jnp.ndarray  # is team2 the home team
+    is_neutral: jnp.ndarray  # is the game at a neutral location
 
     avg_poss: jnp.ndarray | None  # average possessions of the game
     team1_score: jnp.ndarray | None  # team1's score
-    team2_score: jnp.ndarray | None  # team2's score
+
+
+def model(data: ModelData) -> None:
+    # TODO: hardcoding many of the values that I should later try and tune for, time permitting
+    # TODO: ideas for fixed effects: days rest, back to back, etc.
+    # TODO: consider adding weighting so end of season games are more important
+    # TODO: latent factor analysis?
+    # TODO: covid indicator?
+
+    # fixed effects matrices
+    n_context = data.context.shape[1]
+
+    beta_ppp = numpyro.sample("beta_ppp", dist.Normal(0, 0.1).expand((n_context,)))
+    # beta_pace = numpyro.sample("beta_pace", dist.Normal(0, 1).expand((n_context,)))
+
+    context_ppp = jnp.dot(data.context, beta_ppp)
+    # context_pace = jnp.dot(data.context, beta_pace)
+
+    # hyperpriors for the first season
+    mu_offense_ppp = numpyro.sample("mu_offense_ppp", dist.Normal(0, 5))
+    mu_defense_ppp = numpyro.sample("mu_defense_ppp", dist.Normal(0, 5))
+    mu_pace = numpyro.sample("mu_pace", dist.HalfNormal(5))
+
+    sigma_offense_ppp = numpyro.sample("sigma_offense_ppp", dist.Exponential(1))
+    sigma_defense_ppp = numpyro.sample("sigma_defense_ppp", dist.Exponential(1))
+    sigma_pace = numpyro.sample("sigma_pace", dist.Exponential(1))
+
+    # team-season offense and defense vectors for ppp, pace, and possessions
+    offense_ppp = jnp.zeros((data.n_teams, data.n_seasons))
+    defense_ppp = jnp.zeros((data.n_teams, data.n_seasons))
+    pace = jnp.zeros((data.n_teams, data.n_seasons))
+
+    # set the first season's ratings to the hyperpriors
+    offense_ppp = offense_ppp.at[:, 0].set(
+        numpyro.sample(
+            "offense_ppp_0",
+            dist.Normal(mu_offense_ppp, sigma_offense_ppp).expand((data.n_teams,)),
+        )
+    )
+    defense_ppp = defense_ppp.at[:, 0].set(
+        numpyro.sample(
+            "defense_ppp_0",
+            dist.Normal(mu_defense_ppp, sigma_defense_ppp).expand((data.n_teams,)),
+        )
+    )
+    pace = pace.at[:, 0].set(
+        numpyro.sample(
+            "pace_0",
+            dist.Normal(mu_pace, sigma_pace).expand((data.n_teams,)),
+        )
+    )
+
+    # use the previous season's ratings to inform the current season's ratings
+    for s in range(1, data.n_seasons):
+        offense_ppp = offense_ppp.at[:, s].set(
+            numpyro.sample(
+                f"offense_ppp_{s}",
+                dist.Normal(offense_ppp[:, s - 1], sigma_offense_ppp),
+            )
+        )
+        defense_ppp = defense_ppp.at[:, s].set(
+            numpyro.sample(
+                f"defense_ppp_{s}",
+                dist.Normal(defense_ppp[:, s - 1], sigma_defense_ppp),
+            )
+        )
+        pace = pace.at[:, s].set(
+            numpyro.sample(
+                f"pace_{s}",
+                dist.Normal(pace[:, s - 1], sigma_pace),
+            )
+        )
+
+    # get offense and defense ratings for each team
+    team1_offense_ppp = offense_ppp[data.team1, data.season]
+    team2_defense_ppp = defense_ppp[data.team2, data.season]
+    team1_pace = pace[data.team1, data.season]
+    team2_pace = pace[data.team2, data.season]
+
+    # expected points per possession
+    hca_ppp = numpyro.sample("hca", dist.HalfNormal(0.01))
+    team1_ppp = softplus(
+        team1_offense_ppp - team2_defense_ppp + context_ppp + (1 - data.is_neutral) * hca_ppp * data.is_team1_home
+    )
+
+    # expected pace
+    pace_rating = softplus((team1_pace + team2_pace) / 2)
+
+    # expected possessions
+    possessions = softplus(pace_rating * data.minutes)
+
+    # expected scores
+    team1_score = softplus(team1_ppp * possessions)
+
+    # deterministic sites
+    # TODO: replace with offense_ppp and defense_ppp
+    net_rating = numpyro.deterministic("net_rating", team1_offense_ppp - team2_defense_ppp)
+
+    # likelihood function
+    sigma_poss = numpyro.sample("sigma_poss", dist.Exponential(1))
+    phi_score = numpyro.sample("phi_score", dist.Exponential(0.01))
+
+    numpyro.sample("possessions", dist.Normal(possessions, sigma_poss), obs=data.avg_poss)
+    numpyro.sample("team1_score", dist.NegativeBinomial2(team1_score, phi_score), obs=data.team1_score)
 
 
 class MarchMadnessModel:
@@ -38,152 +145,12 @@ class MarchMadnessModel:
         self.infer = None
         self.samples = None
         self.results = None
-
-    @staticmethod
-    def model(data: ModelData) -> None:
-        # TODO: hardcoding many of the values that I should later try and tune for, time permitting
-        # TODO: consider poisson/negative binomial for points/pace/possessions
-        # TODO: ppp is pretty close to normally distributed, as is pace
-        # TODO: could consider poisson for points
-
-        # fixed effects matrices
-        n_context = data.context.shape[1]
-
-        beta_ppp = numpyro.sample("beta_ppp", dist.Normal(0, 1).expand((n_context,)))
-        beta_pace = numpyro.sample("beta_pace", dist.Normal(0, 1).expand((n_context,)))
-
-        context_ppp = jnp.dot(data.context, beta_ppp)
-        context_pace = jnp.dot(data.context, beta_pace)
-
-        home_advantage_ppp = numpyro.sample("home_advantage_ppp", dist.Normal(0, 1))
-
-        # hyperpriors for the first season
-        mu_offense_ppp = numpyro.sample("mu_offense_ppp", dist.Normal(0, 10))
-        mu_defense_ppp = numpyro.sample("mu_defense_ppp", dist.Normal(0, 10))
-
-        sigma_offense_ppp = numpyro.sample("sigma_offense_ppp", dist.Exponential(1))
-        sigma_defense_ppp = numpyro.sample("sigma_defense_ppp", dist.Exponential(1))
-
-        mu_offense_pace = numpyro.sample("mu_offense_pace", dist.Normal(0, 10))
-        mu_defense_pace = numpyro.sample("mu_defense_pace", dist.Normal(0, 10))
-
-        sigma_offense_pace = numpyro.sample("sigma_offense_pace", dist.Exponential(1))
-        sigma_defense_pace = numpyro.sample("sigma_defense_pace", dist.Exponential(1))
-
-        # team-season offense and defense vectors for ppp, pace, and possessions
-        offense_ppp = jnp.zeros((data.n_teams, data.n_seasons))
-        defense_ppp = jnp.zeros((data.n_teams, data.n_seasons))
-
-        offense_pace = jnp.zeros((data.n_teams, data.n_seasons))
-        defense_pace = jnp.zeros((data.n_teams, data.n_seasons))
-
-        # set the first season's ratings to the hyperpriors
-        offense_ppp = offense_ppp.at[:, 0].set(
-            numpyro.sample(
-                "offense_ppp_0",
-                dist.Normal(mu_offense_ppp, sigma_offense_ppp).expand((data.n_teams,)),
-            )
-        )
-        defense_ppp = defense_ppp.at[:, 0].set(
-            numpyro.sample(
-                "defense_ppp_0",
-                dist.Normal(mu_defense_ppp, sigma_defense_ppp).expand((data.n_teams,)),
-            )
-        )
-        offense_pace = offense_pace.at[:, 0].set(
-            numpyro.sample(
-                "offense_pace_0",
-                dist.Normal(mu_offense_pace, sigma_offense_pace).expand((data.n_teams,)),
-            )
-        )
-        defense_pace = defense_pace.at[:, 0].set(
-            numpyro.sample(
-                "defense_pace_0",
-                dist.Normal(mu_defense_pace, sigma_defense_pace).expand((data.n_teams,)),
-            )
-        )
-
-        # temporal shrinkage factor, biased towards 1
-        phi_ppp = numpyro.sample("phi_ppp", dist.Beta(5, 1))
-        phi_pace = numpyro.sample("phi_pace", dist.Beta(5, 1))
-
-        # use the previous season's ratings to inform the current season's ratings
-        for s in range(1, data.n_seasons):
-            offense_ppp = offense_ppp.at[:, s].set(
-                numpyro.sample(
-                    f"offense_ppp_{s}",
-                    dist.Normal(phi_ppp * offense_ppp[:, s - 1], sigma_offense_ppp),
-                )
-            )
-            defense_ppp = defense_ppp.at[:, s].set(
-                numpyro.sample(
-                    f"defense_ppp_{s}",
-                    dist.Normal(phi_ppp * defense_ppp[:, s - 1], sigma_defense_ppp),
-                )
-            )
-            offense_pace = offense_pace.at[:, s].set(
-                numpyro.sample(
-                    f"offense_pace_{s}",
-                    dist.Normal(phi_pace * offense_pace[:, s - 1], sigma_offense_pace),
-                )
-            )
-            defense_pace = defense_pace.at[:, s].set(
-                numpyro.sample(
-                    f"defense_pace_{s}",
-                    dist.Normal(phi_pace * defense_pace[:, s - 1], sigma_defense_pace),
-                )
-            )
-
-        # get offense and defense ratings for each team
-        team1_offense_ppp = offense_ppp[data.team1, data.season]
-        team1_defense_ppp = defense_ppp[data.team1, data.season]
-
-        team1_offense_pace = offense_pace[data.team1, data.season]
-        team1_defense_pace = defense_pace[data.team1, data.season]
-
-        team2_offense_ppp = offense_ppp[data.team2, data.season]
-        team2_defense_ppp = defense_ppp[data.team2, data.season]
-
-        team2_offense_pace = offense_pace[data.team2, data.season]
-        team2_defense_pace = defense_pace[data.team2, data.season]
-
-        # expected points per possession
-        team1_ppp = (
-            team1_offense_ppp
-            - team2_defense_ppp
-            + (1 - data.is_neutral) * home_advantage_ppp * data.is_team1_home
-            + context_ppp
-        )
-        team2_ppp = (
-            team2_offense_ppp
-            - team1_defense_ppp
-            + (1 - data.is_neutral) * home_advantage_ppp * data.is_team2_home
-            + context_ppp
-        )
-
-        # expected pace
-        pace = ((team1_offense_pace - team2_defense_pace + team2_offense_pace - team1_defense_pace) / 2) + context_pace
-
-        # expected possessions
-        poss = pace * data.minutes
-
-        # expected scores
-        team1_score = team1_ppp * poss
-        team2_score = team2_ppp * poss
-
-        # likelihood function
-        sigma_poss = numpyro.sample("sigma_poss", dist.Exponential(1))
-        sigma_team1_score = numpyro.sample("sigma_team1_score", dist.Exponential(1))
-        sigma_team2_score = numpyro.sample("sigma_team2_score", dist.Exponential(1))
-        # TODO: consider other distributions
-        numpyro.sample("poss", dist.Normal(poss, sigma_poss), obs=data.avg_poss)
-        numpyro.sample("team1_score", dist.Normal(team1_score, sigma_team1_score), obs=data.team1_score)
-        numpyro.sample("team2_score", dist.Normal(team2_score, sigma_team2_score), obs=data.team2_score)
+        self.model = model
 
     def fit(
         self,
         data: ModelData,
-        inference: INFERENCE = "svi",
+        inference: Literal["mcmc", "svi"] = "svi",
         num_warmup: int = 1_000,
         num_samples: int = 1_000,
         num_chains: int = 4,
@@ -193,8 +160,8 @@ class MarchMadnessModel:
         **kwargs,
     ):
         # TODO: consider a learning rate schedule
-        init_strategy = initialization.init_to_median(num_samples=100)
         rng_key = random.PRNGKey(seed)
+        init_strategy = initialization.init_to_median(num_samples=100)
         match inference:
             case "mcmc":
                 kernel = NUTS(self.model, init_strategy=init_strategy)
@@ -209,12 +176,17 @@ class MarchMadnessModel:
                 self.samples = self.infer.get_samples()
 
             case "svi":
+                schedule = optax.linear_onecycle_schedule(
+                    peak_value=learning_rate,
+                    transition_steps=num_steps,
+                )
+                optimizer = optax.adamw(learning_rate=schedule)
                 guide = autoguide.AutoNormal(self.model)
                 self.infer = SVI(
                     model=self.model,
                     guide=guide,
+                    optim=optimizer,
                     loss=Trace_ELBO(),
-                    optim=optim.Adam(learning_rate),
                     **kwargs,
                 )
                 self.results = self.infer.run(rng_key, num_steps, data)
@@ -233,4 +205,18 @@ class MarchMadnessModel:
             raise ValueError("Model must be fitted before predictions can be made.")
         rng_key = random.PRNGKey(seed)
         predictive = Predictive(self.model, self.samples)
-        return predictive(rng_key, data)
+        return predictive(rng_key, data=data)
+
+    def save(self, path: str = "M"):
+        save_to = OUTPUT_DIR / f"{path}/model.pkl"
+        with Path(save_to).open("wb") as f:
+            pickle.dump(self, f)
+        logger.info(f"Saved model to {save_to}")
+
+    @classmethod
+    def load(cls, path: str = "M"):
+        load_from = OUTPUT_DIR / f"{path}/model.pkl"
+        with Path(load_from).open("rb") as f:
+            model = pickle.load(f)
+        logger.info(f"Loaded model from {load_from}")
+        return model
