@@ -1,10 +1,16 @@
+from collections import defaultdict
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
+import numpy as np
+import pandas as pd
 import polars as pl
 from pydantic import BaseModel
 
 from march_madness import DATA_DIR, OUTPUT_DIR
+from march_madness.settings import FINAL_FOUR_REGION_SETTINGS, WITHIN_REGION_STANDARD_SEED_SETTINGS
+
+pd.set_option("future.no_silent_downcasting", True)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -329,3 +335,102 @@ class DataConstructor:
             df_list.append(submission)
         final_submission = pl.concat(df_list, how="vertical")
         final_submission.write_csv(OUTPUT_DIR / f"final_submission{sfx}.csv")
+
+    def generate_bracket(self, suffix: str | None = None, *, save: bool = True) -> pl.DataFrame:
+        """Generate a bracket for the NCAA tournament."""
+        sfx = f"_{suffix}" if suffix else ""
+        # tourney_slots = self.data_loader.load_data(self.data_config.ncaa_tourney_slots).filter(pl.col("Season").eq(2025), pl.col(""))
+        teams = self.data_loader.load_data(self.data_config.teams)
+        tourney_seeds = (
+            self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
+            .filter(pl.col("Season").eq(2025))
+            .join(
+                teams.select("TeamID", "TeamName"),
+                how="left",
+                on="TeamID",
+            )
+            .with_columns(pl.col("Seed").str.slice(0, 3))
+            .with_columns(
+                Region=pl.col("Seed").str.slice(0, 1),  # Extract region from seed (e.g., "W01" -> "W")
+                Seed=pl.col("Seed").str.slice(1, 3).cast(int),  # Extract seed number (e.g., "W01" -> 1)
+            )
+        )
+        predictions = pl.read_csv(OUTPUT_DIR / f"{self.league}/submission{sfx}.csv")
+        if self.league == "M":
+            # losers - Mt. Saint Mary's (1110), Texas (1400), San Diego St (1361), St. Francis (1384)
+            exclude = [1110, 1400, 1361, 1384]
+        else:
+            # losers - Princeton (3343), UC San Diego (3471) [gonna assume William & Mary (3456) and Washington (3449)]
+            exclude = [3343, 3471, 3456, 3449]
+        tourney_seeds = tourney_seeds.filter(~pl.col("TeamID").is_in(exclude))
+        team_list = tourney_seeds["TeamName"].to_list()
+        team_id_list = tourney_seeds["TeamID"].to_list()
+        team_map = dict(zip(team_list, team_id_list, strict=False))
+
+        def _get_win_prob(team: str, opp_team: str) -> float:
+            team_id = team_map[team]
+            opp_team_id = team_map[opp_team]
+            if team_id < opp_team_id:
+                game_id = f"2025_{team_id}_{opp_team_id}"
+                # lower id means we take prediction directly
+                win_prob = predictions.filter(pl.col("ID").eq(game_id))["Pred"].item()
+            else:
+                game_id = f"2025_{opp_team_id}_{team_id}"
+                # higher id means we take 1 - prediction
+                win_prob = 1 - predictions.filter(pl.col("ID").eq(game_id))["Pred"].item()
+            return win_prob
+
+        matchup_dict = defaultdict(list)
+        for team in team_list:
+            for opp_team in team_list:
+                if team == opp_team:
+                    prob = None
+                else:
+                    prob = _get_win_prob(team, opp_team)
+                matchup_dict[team].append(prob)
+
+        matchup_df = pd.DataFrame(matchup_dict, index=team_list).T
+
+        round_df = pd.DataFrame(
+            data=np.tile(np.nan, (len(team_list), len(team_list))), index=team_list, columns=team_list
+        )
+        base_df = pd.DataFrame(tourney_seeds, columns=tourney_seeds.columns)
+        for i, row in base_df.iterrows():
+            region_round_map = WITHIN_REGION_STANDARD_SEED_SETTINGS[row["Seed"]]
+            region_round_map[row["Seed"]] = np.nan
+            base_rounds = base_df["Seed"].replace(region_round_map)
+
+            # Set self to null, necessary since sometimes will have the same seed as a play-in
+            base_rounds.loc[i] = np.nan
+
+            # Set Final Four matchups
+            final_four_rounds = base_df["Region"] == FINAL_FOUR_REGION_SETTINGS[row["Region"]]
+            base_rounds.loc[final_four_rounds] = base_rounds.max() + 1
+            # In standard 64 bracket (no play ins) this should sum to 16 (all teams from paired region)
+
+            # Set Championship matchups
+            championship_rounds = (base_df["Region"] != row["Region"]) & (~final_four_rounds)
+            base_rounds.loc[championship_rounds] = base_rounds.max() + 1  # only +1 since now this has some Final Four
+            # In standard 64 bracket (no play ins) this should sum to 32 (all teams from other side of bracket)
+
+            round_df[row["TeamName"]] = pd.Series(base_rounds.values, index=team_list)
+
+        round_df = round_df.T
+
+        advance_df = pd.DataFrame(index=round_df.index)
+        # TODO: will need to change R0 and range if first four
+        # For now, this essentially skips the round=0 created by some of the round generators
+        advance_df["R0"] = 1.0
+        for round_num in range(1, 6 + 1):
+            advance_series = pd.Series(dtype=float)
+            for team_name, team_row in round_df.iterrows():
+                team_round_row = round_df.loc[team_name, :]
+                round_opponents = team_round_row.loc[team_round_row == round_num].index.tolist()
+                advance_pr = (
+                    advance_df.loc[round_opponents, f"R{round_num - 1}"] * matchup_df.loc[team_name, round_opponents]
+                ).sum()
+                advance_series[team_name] = advance_df.loc[team_name, f"R{round_num - 1}"] * advance_pr
+            advance_df[f"R{round_num}"] = advance_series
+
+        advance_df = advance_df.sort_values("R6", ascending=False)
+        advance_df.to_csv(OUTPUT_DIR / f"{self.league}/advance{sfx}.csv")

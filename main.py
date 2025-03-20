@@ -81,6 +81,20 @@ def final(
     data_constructor.get_final_submission(suffix=suffix)
 
 
+@app.command()
+def bracket(
+    league: str = "M",
+    suffix: str | None = None,
+    *,
+    save: bool = True,
+):
+    data_constructor = DataConstructor(league=league)
+    data_constructor.generate_bracket(
+        suffix=suffix,
+        save=save,
+    )
+
+
 if __name__ == "__main__":
     numpyro.set_host_device_count(4)
     numpyro.set_platform("cpu")
