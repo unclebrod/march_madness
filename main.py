@@ -62,13 +62,23 @@ def infer(
 @app.command()
 def submit(
     league: str = "M",
+    suffix: str | None = None,
     *,
     save: bool = True,
 ):
     trainer = Trainer.load(league=league)
     trainer.submit(
         save=save,
+        suffix=suffix,
     )
+
+
+@app.command()
+def final(
+    suffix: str | None = None,
+):
+    data_constructor = DataConstructor(league="M")
+    data_constructor.get_final_submission(suffix=suffix)
 
 
 if __name__ == "__main__":

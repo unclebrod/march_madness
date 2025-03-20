@@ -1,5 +1,7 @@
+from pathlib import Path
 from typing import Any, Literal
 
+import dill as pickle
 import jax.numpy as jnp
 import numpy as np
 import polars as pl
@@ -69,7 +71,7 @@ class Trainer:
         # combine into results
         return pl.concat(df_list, how="horizontal")
 
-    def submit(self, *, save: bool = True) -> tuple[pl.DataFrame, pl.DataFrame]:
+    def submit(self, suffix: str | None = None, *, save: bool = True) -> tuple[pl.DataFrame, pl.DataFrame]:
         df = self.data_constructor.generate_test_data()
         data = self.generate_data(df=df, predict=True)
         samples = self.model.predict(data=data)
@@ -86,7 +88,9 @@ class Trainer:
         team2_wins = (team2_arr > team1_arr).mean(axis=0)
         overtime = (team1_arr == team2_arr).mean(axis=0)
         win_probs = jnp.concat([team1_wins, team2_wins])
-        score_df = get_quantiles(samples["team1_score"], col_name="team1_score")
+        score_df = get_quantiles(samples["team1_score"], col_name="team1_score").with_columns(
+            team1_score_mean=pl.Series("team1_score_mean", samples["team1_score"].mean(axis=0).tolist())
+        )
         possession_df = get_quantiles(samples["possessions"], col_name="team1_possessions")
         results_df = (
             df.with_columns(
@@ -113,6 +117,7 @@ class Trainer:
                         team2_score_025=pl.col("team1_score_025"),
                         team2_score_50=pl.col("team1_score_50"),
                         team2_score_975=pl.col("team1_score_975"),
+                        team2_score_mean=pl.col("team1_score_mean"),
                         team2_possessions_025=pl.col("team1_possessions_025"),
                         team2_possessions_50=pl.col("team1_possessions_50"),
                         team2_possessions_975=pl.col("team1_possessions_975"),
@@ -138,6 +143,8 @@ class Trainer:
                     "team2_name",
                     "Pred",
                     "OppPred",
+                    "team1_score_mean",
+                    "team2_score_mean",
                     "team1_score_025",
                     "team2_score_025",
                     "team1_score_50",
@@ -156,14 +163,117 @@ class Trainer:
                 ]
             )
         )
+        if suffix == "manual":
+            # TODO: could make better logic for this?
+            if self.league == "M":
+                # Make Duke (1181) the winner of all games
+                all_results_wide = all_results_wide.with_columns(
+                    Pred=pl.when(pl.col("team1_id").eq(1181)).then(1).otherwise(pl.col("Pred")),
+                    OppPred=pl.when(pl.col("team1_id").eq(1181)).then(0).otherwise(pl.col("OppPred")),
+                ).with_columns(
+                    Pred=pl.when(pl.col("team2_id").eq(1181)).then(0).otherwise(pl.col("Pred")),
+                    OppPred=pl.when(pl.col("team2_id").eq(1181)).then(1).otherwise(pl.col("OppPred")),
+                )
+            else:
+                # Let all higher seeds advance in round 1
+                tourney_seeds = (
+                    self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
+                    .filter(pl.col("Season").eq(2025))
+                    .with_columns(pl.col("Seed").str.slice(0, 3))
+                    .drop("Season")
+                )
+                tourney_slots = (
+                    self.data_loader.load_data(self.data_config.ncaa_tourney_slots)
+                    .filter(pl.col("Season").eq(2025))
+                    .drop("Season")
+                )
+                tourney_matchups = (
+                    tourney_slots.filter(pl.col("Slot").str.starts_with("R1"))
+                    .join(
+                        tourney_seeds.rename({"Seed": "StrongSeed", "TeamID": "StrongTeamID"}),
+                        on="StrongSeed",
+                        how="left",
+                    )
+                    .join(
+                        tourney_seeds.rename({"Seed": "WeakSeed", "TeamID": "WeakTeamID"}),
+                        on="WeakSeed",
+                        how="left",
+                    )
+                    .with_columns(
+                        Pred=pl.lit(1),
+                        OppPred=pl.lit(0),
+                    )
+                )
+                matchups = pl.concat(
+                    [
+                        tourney_matchups,
+                        tourney_matchups.with_columns(
+                            WeakTeamID=pl.col("StrongTeamID"),
+                            StrongTeamID=pl.col("WeakTeamID"),
+                            WeakSeed=pl.col("StrongSeed"),
+                            StrongSeed=pl.col("WeakSeed"),
+                            Pred=pl.lit(0),
+                            OppPred=pl.lit(1),
+                        ),
+                    ]
+                ).select(
+                    team1_id=pl.col("StrongTeamID"),
+                    team2_id=pl.col("WeakTeamID"),
+                    Pred=pl.col("Pred"),
+                    OppPred=pl.col("OppPred"),
+                )
+                # Make UConn (3163) and South Carolina (3376) the winner of all games, except when they play each other
+                all_results_wide = (
+                    all_results_wide.with_columns(
+                        Pred=pl.when(pl.col("team1_id").eq(3163) & pl.col("team2_id").ne(3376))
+                        .then(1)
+                        .otherwise(pl.col("Pred")),
+                        OppPred=pl.when(pl.col("team1_id").eq(3163) & pl.col("team2_id").ne(3376))
+                        .then(0)
+                        .otherwise(pl.col("OppPred")),
+                    )
+                    .with_columns(
+                        Pred=pl.when(pl.col("team1_id").eq(3376) & pl.col("team2_id").ne(3163))
+                        .then(1)
+                        .otherwise(pl.col("Pred")),
+                        OppPred=pl.when(pl.col("team1_id").eq(3376) & pl.col("team2_id").ne(3163))
+                        .then(0)
+                        .otherwise(pl.col("OppPred")),
+                    )
+                    .with_columns(
+                        Pred=pl.when(pl.col("team2_id").eq(3163) & pl.col("team1_id").ne(3376))
+                        .then(0)
+                        .otherwise(pl.col("Pred")),
+                        OppPred=pl.when(pl.col("team2_id").eq(3163) & pl.col("team1_id").ne(3376))
+                        .then(1)
+                        .otherwise(pl.col("OppPred")),
+                    )
+                    .with_columns(
+                        Pred=pl.when(pl.col("team2_id").eq(3376) & pl.col("team1_id").ne(3163))
+                        .then(0)
+                        .otherwise(pl.col("Pred")),
+                        OppPred=pl.when(pl.col("team2_id").eq(3376) & pl.col("team1_id").ne(3163))
+                        .then(1)
+                        .otherwise(pl.col("OppPred")),
+                    )
+                    .update(
+                        matchups,
+                        on=["team1_id", "team2_id"],
+                        how="left",
+                    )
+                )
+
         submission_df = all_results_wide.select(
             pl.col("ID"),
             pl.col("Pred"),
         )
 
         if save:
-            all_results_wide.write_csv(OUTPUT_DIR / f"{self.league}/results.csv")
-            submission_df.write_csv(OUTPUT_DIR / f"{self.league}/submission.csv")
+            sfx = f"_{suffix}" if suffix else ""
+            all_results_wide.write_csv(OUTPUT_DIR / f"{self.league}/results{sfx}.csv")
+            submission_df.write_csv(OUTPUT_DIR / f"{self.league}/submission{sfx}.csv")
+            with Path(OUTPUT_DIR / f"{self.league}/samples{sfx}.pkl").open("wb") as f:
+                pickle.dump(samples, f)
 
         return all_results_wide, submission_df
 
@@ -231,7 +341,9 @@ class Trainer:
         )
         ratings_list = []
         for idx, season in enumerate(seasons):
-            for coef in ["defense_ppp", "offense_ppp", "pace"]:
+            for coef in ["defense_ppp", "offense_ppp", "pace", "net_rating"]:
+                if coef == "net_rating":
+                    samples[f"{coef}_{idx}"] = samples[f"offense_ppp_{idx}"] + samples[f"defense_ppp_{idx}"]
                 quantiles_df = get_quantiles(samples[f"{coef}_{idx}"]).with_columns(
                     coefficient=pl.lit(coef),
                     season=pl.lit(season),

@@ -4,7 +4,7 @@ from typing import Generic, Literal, TypeVar
 import polars as pl
 from pydantic import BaseModel
 
-from march_madness import DATA_DIR
+from march_madness import DATA_DIR, OUTPUT_DIR
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -17,6 +17,45 @@ def _poss_expr(team_str: str, multiplier: float = 0.475) -> pl.Expr:
         .add(pl.col(f"{team_str}_tov"))
         .add(pl.col(f"{team_str}_fta").mul(pl.lit(multiplier)))
     )
+
+
+def generate_ncaaw_homecourt():
+    regions = ["W", "X", "Y", "Z"]
+    seeds = list(range(1, 17))  # Seeds 1-16
+
+    matchups = []
+
+    # First round matchups
+    first_round_winners = {}  # Store possible winners for R2 matchups
+    for region in regions:
+        first_round_winners[region] = []
+        for i in range(8):  # 1 vs 16, 2 vs 15, ..., 8 vs 9
+            high_seed = seeds[i]
+            low_seed = seeds[-(i + 1)]
+            slot = f"R1{region}{i + 1}"
+            team_a = f"{region}{high_seed:02d}"
+            team_b = f"{region}{low_seed:02d}"
+            has_home_court = int(high_seed <= 4)  # Top 4 seeds host
+
+            matchups.append([slot, team_a, team_b, has_home_court])
+            first_round_winners[region].append((team_a, team_b))  # Save for R2
+
+    # Second round matchups (explicitly listing all combinations)
+    for region in regions:
+        for i in range(4):  # Each R2 slot is winner of (1 vs 16) vs winner of (8 vs 9), etc.
+            slot = f"R2{region}{i + 1}"
+            team_a_options = first_round_winners[region][i]  # Winner of high-seed game
+            team_b_options = first_round_winners[region][8 - i - 1]  # Winner of low-seed game
+
+            for team_a in team_a_options:
+                for team_b in team_b_options:
+                    # Home court logic: Only retains home advantage if original top 4 seed wins
+                    orig_host_seed = int(team_a[1:])  # Extract seed from "W01"
+                    has_home_court = int(orig_host_seed <= 4)  # Home if original host won
+
+                    matchups.append([slot, team_a, team_b, has_home_court])
+
+    return pl.DataFrame(matchups, schema=["Slot", "StrongSeed", "WeakSeed", "is_team1_home"], orient="row")
 
 
 class FileConfig(BaseModel):
@@ -225,10 +264,68 @@ class DataConstructor:
             for col in sample_submission.columns
             if col.startswith("team1_") or col.startswith("team2_")
         }
-        return pl.concat(
+        test_df = pl.concat(
             [
                 sample_submission,
                 sample_submission.rename(rename_dict).select(sample_submission.columns),
             ],
             how="vertical",
         ).drop(["Pred", "id_split"])
+        if self.league == "W":
+            # In the women's tourney, higher seeds have home court advantage in the first two rounds
+            # TODO: don't hard code the season - can adjust this later
+            tourney_seeds = (
+                self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
+                .filter(pl.col("Season").eq(2025))
+                .drop("Season")
+            )
+            homecourt_df = (
+                generate_ncaaw_homecourt()
+                .join(
+                    tourney_seeds.rename({"Seed": "StrongSeed", "TeamID": "team1_id"}),
+                    how="left",
+                    on="StrongSeed",
+                )
+                .join(
+                    tourney_seeds.rename({"Seed": "WeakSeed", "TeamID": "team2_id"}),
+                    how="left",
+                    on="WeakSeed",
+                )
+            )
+            hca = (
+                pl.concat(
+                    [
+                        homecourt_df,
+                        homecourt_df.with_columns(
+                            team2_id=pl.col("team1_id"),
+                            team1_id=pl.col("team2_id"),
+                            is_team2_home=pl.col("is_team1_home"),
+                        ).drop("is_team1_home"),
+                    ],
+                    how="diagonal_relaxed",
+                )
+                .with_columns(
+                    pl.col("is_team1_home").fill_null(0),
+                    pl.col("is_team2_home").fill_null(0),
+                )
+                .with_columns(
+                    is_neutral=pl.lit(0),
+                    team1_loc=pl.when(pl.col("is_team1_home").eq(1)).then(pl.lit("H")).otherwise(pl.lit("A")),
+                    team2_loc=pl.when(pl.col("is_team2_home").eq(1)).then(pl.lit("H")).otherwise(pl.lit("A")),
+                )
+            )
+            test_df = test_df.update(
+                hca.drop(["Slot", "StrongSeed", "WeakSeed"]),
+                on=["team1_id", "team2_id"],
+                how="left",
+            )
+        return test_df
+
+    def get_final_submission(self, suffix: str | None = None) -> pl.DataFrame:
+        sfx = f"_{suffix}" if suffix else ""
+        df_list = []
+        for league in ["M", "W"]:
+            submission = pl.read_csv(OUTPUT_DIR / f"{league}/submission{sfx}.csv")
+            df_list.append(submission)
+        final_submission = pl.concat(df_list, how="vertical")
+        final_submission.write_csv(OUTPUT_DIR / f"final_submission{sfx}.csv")
