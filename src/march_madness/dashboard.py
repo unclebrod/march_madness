@@ -43,6 +43,11 @@ def main():
             title="Matchups",
             icon="🤼",
         ),
+        st.Page(
+            f"{ROOT}/advance.py",
+            title="Advancement",
+            icon="🥇",
+        ),
     ]
 
     pg = st.navigation(pages)
