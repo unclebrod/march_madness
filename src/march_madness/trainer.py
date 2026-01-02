@@ -1,3 +1,5 @@
+"""Trainer class for March Madness modeling."""
+
 from pathlib import Path
 from typing import Any, Literal
 
@@ -6,10 +8,10 @@ import jax.numpy as jnp
 import numpy as np
 import polars as pl
 
-from march_madness import OUTPUT_DIR
 from march_madness.encoder import LabelEncoder
 from march_madness.loader import DataConfig, DataConstructor, DataLoader
 from march_madness.model import MarchMadnessModel, ModelData
+from march_madness.path import OUTPUT_DIR
 
 
 def get_quantiles(arr: jnp.ndarray, col_name: str = "value") -> pl.DataFrame:
@@ -23,7 +25,9 @@ def get_quantiles(arr: jnp.ndarray, col_name: str = "value") -> pl.DataFrame:
 
 def get_win_probs(predictive: dict[str, Any], team_str: str, opp_team_str: str) -> pl.DataFrame:
     return pl.DataFrame(
-        data=np.array((predictive[f"{team_str}_score"] > predictive[f"{opp_team_str}_score"]).mean(axis=0)),
+        data=np.array(
+            (predictive[f"{team_str}_score"] > predictive[f"{opp_team_str}_score"]).mean(axis=0)
+        ),
         schema=[f"{team_str}_win_prob"],
     )
 
@@ -47,7 +51,9 @@ class Trainer:
         self.model = MarchMadnessModel() if not model else model
         self.data_loader = DataLoader(league=league) if not data_loader else data_loader
         self.data_config = DataConfig() if not data_config else data_config
-        self.data_constructor = DataConstructor(league=league) if not data_constructor else data_constructor
+        self.data_constructor = (
+            DataConstructor(league=league) if not data_constructor else data_constructor
+        )
 
     def train(self, df: pl.DataFrame, **kwargs):
         self.season_encoder.fit(df["season"])
@@ -71,7 +77,9 @@ class Trainer:
         # combine into results
         return pl.concat(df_list, how="horizontal")
 
-    def submit(self, suffix: str | None = None, *, save: bool = True) -> tuple[pl.DataFrame, pl.DataFrame]:
+    def submit(
+        self, suffix: str | None = None, *, save: bool = True
+    ) -> tuple[pl.DataFrame, pl.DataFrame]:
         df = self.data_constructor.generate_test_data()
         data = self.generate_data(df=df, predict=True)
         samples = self.model.predict(data=data)
@@ -89,13 +97,17 @@ class Trainer:
         overtime = (team1_arr == team2_arr).mean(axis=0)
         win_probs = jnp.concat([team1_wins, team2_wins])
         score_df = get_quantiles(samples["team1_score"], col_name="team1_score").with_columns(
-            team1_score_mean=pl.Series("team1_score_mean", samples["team1_score"].mean(axis=0).tolist())
+            team1_score_mean=pl.Series(
+                "team1_score_mean", samples["team1_score"].mean(axis=0).tolist()
+            )
         )
         possession_df = get_quantiles(samples["possessions"], col_name="team1_possessions")
         results_df = (
             df.with_columns(
                 team1_pred=pl.Series(name="Pred", values=win_probs.tolist()),
-                overtime=pl.Series(name="overtime", values=jnp.concat([overtime, overtime]).tolist()),
+                overtime=pl.Series(
+                    name="overtime", values=jnp.concat([overtime, overtime]).tolist()
+                ),
             )
             .join(
                 team_meta.rename({"team_id": "team1_id", "team_name": "team1_name"}),
@@ -127,11 +139,15 @@ class Trainer:
                 how="horizontal",
             )
             .with_columns(
-                Pred=pl.col("team1_pred").truediv(pl.col("team1_pred").add(pl.col("team2_pred"))).alias("Pred"),
+                Pred=pl.col("team1_pred")
+                .truediv(pl.col("team1_pred").add(pl.col("team2_pred")))
+                .alias("Pred"),
             )
             .with_columns(
                 OppPred=pl.lit(1).sub("Pred"),
-                spread=pl.col("team2_score_50").sub(pl.col("team1_score_50")),  # negative means team 1 is favored
+                spread=pl.col("team2_score_50").sub(
+                    pl.col("team1_score_50")
+                ),  # negative means team 1 is favored
             )
             .select(
                 [
@@ -169,10 +185,14 @@ class Trainer:
                 # Make Duke (1181) the winner of all games
                 all_results_wide = all_results_wide.with_columns(
                     Pred=pl.when(pl.col("team1_id").eq(1181)).then(1).otherwise(pl.col("Pred")),
-                    OppPred=pl.when(pl.col("team1_id").eq(1181)).then(0).otherwise(pl.col("OppPred")),
+                    OppPred=pl.when(pl.col("team1_id").eq(1181))
+                    .then(0)
+                    .otherwise(pl.col("OppPred")),
                 ).with_columns(
                     Pred=pl.when(pl.col("team2_id").eq(1181)).then(0).otherwise(pl.col("Pred")),
-                    OppPred=pl.when(pl.col("team2_id").eq(1181)).then(1).otherwise(pl.col("OppPred")),
+                    OppPred=pl.when(pl.col("team2_id").eq(1181))
+                    .then(1)
+                    .otherwise(pl.col("OppPred")),
                 )
             else:
                 # Let all higher seeds advance in round 1
@@ -343,7 +363,9 @@ class Trainer:
         for idx, season in enumerate(seasons):
             for coef in ["defense_ppp", "offense_ppp", "pace", "net_rating"]:
                 if coef == "net_rating":
-                    samples[f"{coef}_{idx}"] = samples[f"offense_ppp_{idx}"] + samples[f"defense_ppp_{idx}"]
+                    samples[f"{coef}_{idx}"] = (
+                        samples[f"offense_ppp_{idx}"] + samples[f"defense_ppp_{idx}"]
+                    )
                 quantiles_df = get_quantiles(samples[f"{coef}_{idx}"]).with_columns(
                     coefficient=pl.lit(coef),
                     season=pl.lit(season),

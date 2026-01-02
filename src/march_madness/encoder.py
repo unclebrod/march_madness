@@ -1,3 +1,5 @@
+"""Encoder classes."""
+
 from pathlib import Path
 from typing import Self
 
@@ -6,7 +8,8 @@ import jax.numpy as jnp
 import numpy as np
 import polars as pl
 
-from march_madness import OUTPUT_DIR, logger
+from march_madness.log import logger
+from march_madness.path import OUTPUT_DIR
 
 
 class LabelEncoder:

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import dill as pickle
 import jax.numpy as jnp
@@ -11,7 +11,8 @@ from jax import random
 from jax.nn import softplus
 from numpyro.infer import MCMC, NUTS, SVI, Predictive, Trace_ELBO, autoguide, initialization
 
-from march_madness import OUTPUT_DIR, logger
+from march_madness.log import logger
+from march_madness.path import OUTPUT_DIR
 
 
 @dataclass
@@ -116,7 +117,10 @@ def model(data: ModelData) -> None:
     # expected points per possession
     hca_ppp = numpyro.sample("hca", dist.HalfNormal(0.01))
     team1_ppp = softplus(
-        team1_offense_ppp - team2_defense_ppp + context_ppp + (1 - data.is_neutral) * hca_ppp * data.is_team1_home
+        team1_offense_ppp
+        - team2_defense_ppp
+        + context_ppp
+        + (1 - data.is_neutral) * hca_ppp * data.is_team1_home
     )
 
     # expected pace
@@ -137,7 +141,9 @@ def model(data: ModelData) -> None:
     phi_score = numpyro.sample("phi_score", dist.Exponential(0.01))
 
     numpyro.sample("possessions", dist.Normal(possessions, sigma_poss), obs=data.avg_poss)
-    numpyro.sample("team1_score", dist.NegativeBinomial2(team1_score, phi_score), obs=data.team1_score)
+    numpyro.sample(
+        "team1_score", dist.NegativeBinomial2(team1_score, phi_score), obs=data.team1_score
+    )
 
 
 class MarchMadnessModel:
@@ -200,7 +206,7 @@ class MarchMadnessModel:
             case _:
                 raise NotImplementedError("The provided inference method is not implemented.")
 
-    def predict(self, data: ModelData, seed: int = 0):
+    def predict(self, data: Any, seed: int = 0):
         if self.samples is None:
             raise ValueError("Model must be fitted before predictions can be made.")
         rng_key = random.PRNGKey(seed)

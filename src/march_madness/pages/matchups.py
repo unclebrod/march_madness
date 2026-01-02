@@ -35,7 +35,9 @@ with st.form("matchups"):
         team1_id = team_map[team1]
         team2_id = team_map[team2]
         teams_in_order = sorted([team1_id, team2_id])
-        matchup = matchups.filter(pl.col("ID").eq(f"{SEASON}_{teams_in_order[0]}_{teams_in_order[1]}"))
+        matchup = matchups.filter(
+            pl.col("ID").eq(f"{SEASON}_{teams_in_order[0]}_{teams_in_order[1]}")
+        )
         st.dataframe(matchup)
 
         cols = st.columns(2)
@@ -43,18 +45,31 @@ with st.form("matchups"):
         team2 = get_item(matchup, "team2_name")
         with cols[0]:
             st.metric(f"{team1} Win Probability", round(get_item(matchup, "Pred"), 3), border=True)
-            st.metric(f"{team1} Score (Mean)", round(get_item(matchup, "team1_score_mean"), 2), border=True)
+            st.metric(
+                f"{team1} Score (Mean)",
+                round(get_item(matchup, "team1_score_mean"), 2),
+                border=True,
+            )
             st.metric(f"{team1} Score (Median)", get_item(matchup, "team1_score_50"), border=True)
             st.metric(f"{team1} Score (2.5%)", get_item(matchup, "team1_score_025"), border=True)
             st.metric(f"{team1} Score (97.5%)", get_item(matchup, "team1_score_975"), border=True)
         with cols[1]:
-            st.metric(f"{team2} Win Probability", round(get_item(matchup, "OppPred"), 3), border=True)
-            st.metric(f"{team2} Score (Mean)", round(get_item(matchup, "team2_score_mean"), 2), border=True)
+            st.metric(
+                f"{team2} Win Probability", round(get_item(matchup, "OppPred"), 3), border=True
+            )
+            st.metric(
+                f"{team2} Score (Mean)",
+                round(get_item(matchup, "team2_score_mean"), 2),
+                border=True,
+            )
             st.metric(f"{team2} Score (Median)", get_item(matchup, "team2_score_50"), border=True)
             st.metric(f"{team2} Score (2.5%)", get_item(matchup, "team2_score_025"), border=True)
             st.metric(f"{team2} Score (97.5%)", get_item(matchup, "team2_score_975"), border=True)
 
         estimated_possessions = matchup.select(
-            possessions=pl.col("team1_possessions_50").add(pl.col("team2_possessions_50")).truediv(2).round(2),
+            possessions=pl.col("team1_possessions_50")
+            .add(pl.col("team2_possessions_50"))
+            .truediv(2)
+            .round(2),
         )["possessions"]
         st.metric("Estimated Possessions", value=estimated_possessions, border=True)

@@ -1,6 +1,8 @@
+"""Streamlit dashboard for March Madness analysis."""
+
 import streamlit as st
 
-from march_madness import OUTPUT_DIR
+from march_madness.path import OUTPUT_DIR
 
 ROOT = "src/march_madness/pages"
 

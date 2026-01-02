@@ -5,20 +5,21 @@ authors = [
 ]
 description = "Codebase for my submission to Kaggle's yearly March Machine Learning Mania competition"
 readme = "README.md"
-requires-python = "~=3.12"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 dynamic = ["version"]
 dependencies = [
-    "dill~=0.3",
-    "jaxlib<0.5.0",
-    "numpyro~=0.17",
-    "optax~=0.2",
-    "polars~=1.22",
-    "pydantic~=2.10",
-    "python-dotenv~=1.0",
-    "rich~=13.9",
-    "scikit-learn~=1.6",
-    "typer~=0.15",
+    "dill>=0.3",
+    # "jaxlib<0.5.0",
+    "jaxlib>=0.5.0",
+    "numpyro>=0.17",
+    "optax>=0.2",
+    "polars>=1.22",
+    "pydantic>=2.10",
+    "python-dotenv>=1.0",
+    "rich>=13.9",
+    "scikit-learn>=1.6",
+    "typer>=0.15",
 ]
 
 [dependency-groups]
@@ -26,12 +27,14 @@ dev = [
     "ruff>=0.9.7",
 ]
 viz = [
-    "altair~=5.5",
-    "arviz~=0.21",
-    "ipython~=8.32",
-    "matplotlib~=3.10",
-    "streamlit~=1.43",
-    "watchdog~=6.0",
+    "altair>=5.5",
+    "arviz>=0.21",
+    "matplotlib>=3.10",
+    "streamlit>=1.43",
+    "watchdog>=6.0",
+]
+debug = [
+    "ipython>=8.32",
 ]
 
 [build-system]
@@ -41,21 +44,21 @@ build-backend = "pdm.backend"
 [tool.ruff.lint]
 #  https://docs.astral.sh/ruff/rules/
 select = [
-    "F",  # pyflakes
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "I",  # isort
-    "N",  # pep8-naming
-    "UP",  # pyupgrade
-    "B",  # flake8-bugbear
-    "PTH",  # flake8-use-pathlib
-    "FBT",  # flake8-boolean-trap
-    "A",  # flake8-builtins
-    "C4",  # flake8-comprehension
-    "DTZ",  # flake8-datetimez
-    "RET",  # flake8-return
-    "PTH",  # flake8-use-pathlib
-    "ASYNC",  # flake8-async
+    "F",        # pyflakes
+    "E",        # pycodestyle errors
+    "W",        # pycodestyle warnings
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "PTH",      # flake8-use-pathlib
+    "FBT",      # flake8-boolean-trap
+    "A",        # flake8-builtins
+    "C4",       # flake8-comprehension
+    "DTZ",      # flake8-datetimez
+    "RET",      # flake8-return
+    "PTH",      # flake8-use-pathlib
+    "ASYNC",    # flake8-async
 ]
 ignore = [
     "E501", # line too long
@@ -66,4 +69,4 @@ fixable = ["ALL"]
 convention = "numpy"
 
 [tool.ruff]
-line-length = 120
+line-length = 100

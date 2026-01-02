@@ -1,13 +1,17 @@
+"""Main entry point for March Madness modeling and analysis."""
+
 import numpyro
 import typer
+from dotenv import find_dotenv, load_dotenv
 
+from march_madness import dashboard, geocoding
 from march_madness.loader import DataConstructor
 from march_madness.trainer import Trainer
 
 app = typer.Typer()
 
 
-@app.command()
+@app.command("train")
 def train(
     league: str = "M",
     inference: str = "svi",
@@ -18,7 +22,7 @@ def train(
     num_steps: int = 25_000,
     *,
     save: bool = True,
-):
+) -> None:
     data_constructor = DataConstructor(league=league)
     trainer = Trainer(league=league)
     box_scores = data_constructor.load_game_team_box_scores()
@@ -35,10 +39,10 @@ def train(
         trainer.save(path=league)
 
 
-@app.command()
+@app.command("predict")
 def predict(
     league: str = "M",
-):
+) -> None:
     data_constructor = DataConstructor(league=league)
     trainer = Trainer.load(league=league)
     box_scores = data_constructor.load_game_team_box_scores()
@@ -47,25 +51,25 @@ def predict(
     )
 
 
-@app.command()
+@app.command("infer")
 def infer(
     league: str = "M",
     *,
     save: bool = True,
-):
+) -> None:
     trainer = Trainer.load(league=league)
     trainer.infer(
         save=save,
     )
 
 
-@app.command()
+@app.command("submit")
 def submit(
     league: str = "M",
     suffix: str | None = None,
     *,
     save: bool = True,
-):
+) -> None:
     trainer = Trainer.load(league=league)
     trainer.submit(
         save=save,
@@ -73,21 +77,21 @@ def submit(
     )
 
 
-@app.command()
+@app.command("final")
 def final(
     suffix: str | None = None,
-):
+) -> None:
     data_constructor = DataConstructor(league="M")
     data_constructor.get_final_submission(suffix=suffix)
 
 
-@app.command()
+@app.command("bracket")
 def bracket(
     league: str = "M",
     suffix: str | None = None,
     *,
     save: bool = True,
-):
+) -> None:
     data_constructor = DataConstructor(league=league)
     data_constructor.generate_bracket(
         suffix=suffix,
@@ -95,8 +99,19 @@ def bracket(
     )
 
 
+@app.command("streamlit")
+def streamlit() -> None:
+    dashboard.main()
+
+
+@app.command("geocode")
+def geocode() -> None:
+    geocoding.geocode_cities()
+
+
 if __name__ == "__main__":
-    numpyro.set_host_device_count(4)
-    numpyro.set_platform("cpu")
+    load_dotenv(find_dotenv())
+    numpyro.set_platform("gpu")
+    # numpyro.set_host_device_count(4)
 
     app()
