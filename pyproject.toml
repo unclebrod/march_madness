@@ -11,6 +11,7 @@ dynamic = ["version"]
 dependencies = [
     "dill>=0.3",
     # "jaxlib<0.5.0",
+    "jax-metal>=0.1.1",
     "jaxlib>=0.5.0",
     "numpyro>=0.17",
     "optax>=0.2",

@@ -7,9 +7,15 @@ import pandas as pd
 import polars as pl
 from pydantic import BaseModel
 
-from march_madness.derive import derive_team_locations, generate_ncaaw_homecourt, haversine
 from march_madness.path import DATA_DIR, OUTPUT_DIR
 from march_madness.settings import FINAL_FOUR_REGION_SETTINGS, WITHIN_REGION_STANDARD_SEED_SETTINGS
+from march_madness.utils import (
+    current_season,
+    derive_rest_days,
+    derive_team_locations,
+    generate_ncaaw_homecourt,
+    haversine,
+)
 
 pd.set_option("future.no_silent_downcasting", True)
 
@@ -237,11 +243,11 @@ class DataConstructor:
                 date=pl.col("day_zero").add(pl.duration(days=pl.col("day_num"))),
                 minutes=pl.lit(40).add(pl.col("num_ot").mul(pl.lit(5))),
                 spread=pl.col("team2_score").sub(pl.col("team1_score")),
-                is_team1_home=pl.col("team1_loc").eq("H").cast(int),
-                is_team2_home=pl.col("team2_loc").eq("H").cast(int),
+                team1_home=pl.col("team1_loc").eq("H").cast(int),
+                team2_home=pl.col("team2_loc").eq("H").cast(int),
                 is_neutral=pl.col("team1_loc").eq("N").cast(int),
-                is_team1_win=pl.col("team1_score").gt(pl.col("team2_score")).cast(int),
-                is_team2_win=pl.col("team2_score").gt(pl.col("team1_score")).cast(int),
+                team1_win=pl.col("team1_score").gt(pl.col("team2_score")).cast(int),
+                team2_win=pl.col("team2_score").gt(pl.col("team1_score")).cast(int),
                 team1_poss=_poss_expr("team1"),
                 team2_poss=_poss_expr("team2"),
             )
@@ -340,6 +346,7 @@ class DataConstructor:
             how="vertical",
         ).sort("season", "game_id", "day_num", "team1_id")
         team_locations = derive_team_locations(game_team_box_scores)
+        team_rest = derive_rest_days(game_team_box_scores)
         return (
             game_team_box_scores.join(
                 team_locations.rename(
@@ -369,6 +376,32 @@ class DataConstructor:
                 on=["season", "team2_id"],
                 how="left",
             )
+            .join(
+                team_rest.rename(
+                    {
+                        "team_id": "team1_id",
+                        "b2b": "team1_b2b",
+                        "2in3": "team1_2in3",
+                        "3in4": "team1_3in4",
+                        "4in5": "team1_4in5",
+                    }
+                ),
+                on=["season", "team1_id", "game_id"],
+                how="left",
+            )
+            .join(
+                team_rest.rename(
+                    {
+                        "team_id": "team2_id",
+                        "b2b": "team2_b2b",
+                        "2in3": "team2_2in3",
+                        "3in4": "team2_3in4",
+                        "4in5": "team2_4in5",
+                    }
+                ),
+                on=["season", "team2_id", "game_id"],
+                how="left",
+            )
             .with_columns(
                 city=_fill_null_location(null_col="city"),
                 state=_fill_null_location(null_col="state"),
@@ -386,10 +419,16 @@ class DataConstructor:
             )
             .with_columns(
                 # Will use convential of team2 - team1 for consistency with spread
-                travel_distance_diff=pl.col("team2_travel_distance").sub(
-                    pl.col("team1_travel_distance")
-                ),
-                elevation_diff=pl.col("team2_elevation").sub(pl.col("team1_elevation")),
+                **{
+                    "travel_distance_diff": pl.col("team2_travel_distance").sub(
+                        pl.col("team1_travel_distance")
+                    ),
+                    "elevation_diff": pl.col("team2_elevation").sub(pl.col("team1_elevation")),
+                    "b2b_diff": pl.col("team2_b2b").sub(pl.col("team1_b2b")),
+                    "2in3_diff": pl.col("team2_2in3").sub(pl.col("team1_2in3")),
+                    "3in4_diff": pl.col("team2_3in4").sub(pl.col("team1_3in4")),
+                    "4in5_diff": pl.col("team2_4in5").sub(pl.col("team1_4in5")),
+                },
             )
             .with_columns(
                 log_travel_distance_diff=pl.when(pl.col("travel_distance_diff").gt(0))
@@ -398,6 +437,16 @@ class DataConstructor:
                 log_elevation_diff=pl.when(pl.col("elevation_diff").gt(0))
                 .then(pl.col("elevation_diff").log1p())
                 .otherwise(pl.col("elevation_diff").mul(pl.lit(-1)).log1p().mul(pl.lit(-1))),
+                fatigue_effect_1=pl.col("b2b_diff"),
+            )
+            .with_columns(
+                fatigue_effect_2=pl.col("2in3_diff").add(pl.col("fatigue_effect_1")),
+            )
+            .with_columns(
+                fatigue_effect_3=pl.col("3in4_diff").add(pl.col("fatigue_effect_2")),
+            )
+            .with_columns(
+                fatigue_effect_4=pl.col("4in5_diff").add(pl.col("fatigue_effect_3")),
             )
         )
 
@@ -441,10 +490,9 @@ class DataConstructor:
         ).drop(["Pred", "id_split"])
         if self.league == "W":
             # In the women's tourney, higher seeds have home court advantage in the first two rounds
-            # TODO: don't hard code the season - can adjust this later
             tourney_seeds = (
                 self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
-                .filter(pl.col("Season").eq(2025))
+                .filter(pl.col("Season").eq(current_season()))
                 .drop("Season")
             )
             homecourt_df = (
@@ -509,7 +557,7 @@ class DataConstructor:
         teams = self.data_loader.load_data(self.data_config.teams)
         tourney_seeds = (
             self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
-            .filter(pl.col("Season").eq(2025))
+            .filter(pl.col("Season").eq(current_season()))
             .join(
                 teams.select("TeamID", "TeamName"),
                 how="left",
@@ -597,7 +645,7 @@ class DataConstructor:
         advance_df["R0"] = 1.0
         for round_num in range(1, 6 + 1):
             advance_series = pd.Series(dtype=float)
-            for team_name, team_row in round_df.iterrows():
+            for team_name, _ in round_df.iterrows():
                 team_round_row = round_df.loc[team_name, :]
                 round_opponents = team_round_row.loc[team_round_row == round_num].index.tolist()
                 advance_pr = (

@@ -10,22 +10,29 @@ from jax import random
 from numpyro.infer import MCMC, NUTS, SVI, Predictive, Trace_ELBO, autoguide, initialization
 from pydantic import BaseModel
 
-from march_madness.logger import logger
+from march_madness.log import logger
 from march_madness.path import OUTPUT_DIR
 
 
+class Diagnostics(BaseModel):
+    svi_losses: list[float] | None = None
+    final_elbo: float | None = None
+
+
 class SavePayload(BaseModel):
-    # TODO: consider expanding with things like number of steps, elbo, summary, acceptance rate, etc.
     samples: dict[str, Any]
+    diagnostics: Diagnostics | None = None
 
 
 class BaseNumpyroModel(ABC):
+    """Base class for numpyro probabilistic models."""
+
     name: ClassVar[str]
 
-    def __init__(self):
+    def __init__(self, **kwargs) -> None:
         self.infer = None
         self.samples = None
-        self.results = None
+        self.diagnostics = None
 
     @abstractmethod
     def model(self, data: Any, **kwargs) -> None: ...
@@ -71,11 +78,15 @@ class BaseNumpyroModel(ABC):
                     loss=Trace_ELBO(),
                     **kwargs,
                 )
-                self.results = self.infer.run(rng_key, num_steps, data)
+                results = self.infer.run(rng_key, num_steps, data)
+                self.diagnostics = Diagnostics(
+                    svi_losses=results.losses.tolist(),
+                    final_elbo=results.losses.tolist()[-1],
+                )
                 rng_key, rng_key_ = random.split(rng_key)
                 self.samples = guide.sample_posterior(
                     rng_key=rng_key_,
-                    params=self.results.params,
+                    params=results.params,
                     sample_shape=(num_samples,),
                 )
 
@@ -91,7 +102,10 @@ class BaseNumpyroModel(ABC):
 
     def save(self, path: str = "M") -> None:
         save_to = OUTPUT_DIR / f"{path}/{self.name}/model.pkl"
-        payload = SavePayload(samples=self.samples)
+        payload = SavePayload(
+            samples=self.samples,
+            diagnostics=self.diagnostics,
+        )
         with Path(save_to).open("wb") as f:
             pickle.dump(payload.model_dump(), f)
         logger.info(f"Saved model to {save_to}")
@@ -103,4 +117,4 @@ class BaseNumpyroModel(ABC):
             model = pickle.load(f)
         payload = SavePayload.model_validate(model)
         logger.info(f"Loaded model from {load_from}")
-        return cls(samples=payload.samples)
+        return cls(samples=payload.samples, diagnostics=payload.diagnostics)

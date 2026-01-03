@@ -1,4 +1,7 @@
-"""Haversine formula to calculate distances between two lat/lng points."""
+"""Module utilities."""
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import polars as pl
 
@@ -62,7 +65,34 @@ def derive_team_locations(game_team_box_scores: pl.DataFrame) -> pl.DataFrame:
     return team_locations.join(cities, on=["city", "state"], how="left")
 
 
+def derive_rest_days(game_team_box_scores: pl.DataFrame) -> pl.DataFrame:
+    """Derive rest days for teams based on game dates."""
+    return (
+        game_team_box_scores.select(
+            pl.col("game_id"),
+            pl.col("season"),
+            pl.col("team1_id").alias("team_id"),
+            pl.col("days_into_season"),
+        )
+        .sort(["season", "team_id", "days_into_season"])
+        .with_columns(
+            **{
+                f"days_rest_{x}": pl.col("days_into_season").diff(x).over(["team_id", "season"])
+                for x in range(1, 4)
+            }
+        )
+        .with_columns(
+            pl.col("days_rest_1").lt(1.5).alias("b2b").cast(pl.Int8).fill_null(0),
+            pl.col("days_rest_1").lt(2.5).alias("2in3").cast(pl.Int8).fill_null(0),
+            pl.col("days_rest_2").lt(3.5).alias("3in4").cast(pl.Int8).fill_null(0),
+            pl.col("days_rest_3").lt(4.5).alias("4in5").cast(pl.Int8).fill_null(0),
+        )
+        .drop("days_into_season", *[f"days_rest_{x}" for x in range(1, 4)])
+    )
+
+
 def generate_ncaaw_homecourt() -> pl.DataFrame:
+    """Generate NCAAW tournament home court advantage dataframe."""
     regions = ["W", "X", "Y", "Z"]
     seeds = list(range(1, 17))  # Seeds 1-16
 
@@ -103,3 +133,13 @@ def generate_ncaaw_homecourt() -> pl.DataFrame:
         schema=["Slot", "StrongSeed", "WeakSeed", "is_team1_home"],
         orient="row",
     )
+
+
+def current_season() -> int:
+    """Get the current NCAA season based on today's date."""
+
+    today = datetime.now(ZoneInfo("America/New_York"))
+    year = today.year
+    if today.month >= 11:  # November or later
+        return year + 1
+    return year

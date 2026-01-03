@@ -7,6 +7,7 @@ from dotenv import find_dotenv, load_dotenv
 from march_madness import dashboard, geocoding
 from march_madness.loader import DataConstructor
 from march_madness.trainer import Trainer
+from march_madness.trainers.ppp_trainer import PointsPerPossessionTrainer
 
 app = typer.Typer()
 
@@ -109,9 +110,36 @@ def geocode() -> None:
     geocoding.geocode_cities()
 
 
+# TODO: eventually make this the main method after testing
+@app.command("ppp")
+def ppp(
+    league: str = "M",
+    inference: str = "svi",
+    num_warmup: int = 1_000,
+    num_samples: int = 1_000,
+    num_chains: int = 4,
+    learning_rate: float = 0.01,
+    num_steps: int = 25_000,
+    *,
+    save: bool = True,
+) -> None:
+    data_constructor = DataConstructor(league=league)
+    trainer = PointsPerPossessionTrainer(league=league)
+    box_scores = data_constructor.load_game_team_box_scores()
+    trainer.train(
+        df=box_scores,
+        inference=inference,
+        num_warmup=num_warmup,
+        num_samples=num_samples,
+        num_chains=num_chains,
+        num_steps=num_steps,
+        learning_rate=learning_rate,
+    )
+
+
 if __name__ == "__main__":
     load_dotenv(find_dotenv())
-    numpyro.set_platform("gpu")
-    # numpyro.set_host_device_count(4)
+    numpyro.set_platform("cpu")
+    numpyro.set_host_device_count(4)
 
     app()

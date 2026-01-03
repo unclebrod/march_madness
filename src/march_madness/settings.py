@@ -1,5 +1,9 @@
 """Settings for March Madness modeling."""
 
+from typing import Literal
+
+LEAGUE = Literal["M", "W"]
+
 WITHIN_REGION_STANDARD_SEED_SETTINGS = {
     16: {
         # 16: 0,  # For play-in games
