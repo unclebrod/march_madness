@@ -2,7 +2,7 @@ import altair as alt
 import polars as pl
 import streamlit as st
 
-from march_madness.path import DATA_DIR, OUTPUT_DIR
+from march_madness.settings import DATA_DIR, OUTPUT_DIR
 
 st.title("Bracket Advancement")
 

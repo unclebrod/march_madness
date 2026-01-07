@@ -1,11 +1,54 @@
 """Module utilities."""
 
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import polars as pl
+from pydantic import BaseModel
 
 EARTH_RADIUS_MILES = 3959.0
+
+
+class SummaryStats(BaseModel):
+    mean: list[float] | list[list[float]]
+    std: list[float] | list[list[float]]
+    percentile_025: list[float] | list[list[float]]
+    percentile_500: list[float] | list[list[float]]
+    percentile_975: list[float] | list[list[float]]
+
+    def get_index(self, index: int) -> "SummaryStats":
+        """Get summary statistics for a specific index."""
+        return SummaryStats(
+            mean=self.mean[index],
+            std=self.std[index],
+            percentile_025=self.percentile_025[index],
+            percentile_500=self.percentile_500[index],
+            percentile_975=self.percentile_975[index],
+        )
+
+
+def summarize_samples(site_samples: dict[str, Any]) -> SummaryStats:
+    """Generates summary statistics for the samples for 0/1-dimensional sites."""
+    if np.ndim(site_samples) == 1:
+        site_samples = site_samples.reshape(-1, 1)  # Ensure arr is 2D for quantile calculation
+    return SummaryStats(
+        mean=np.mean(site_samples, axis=0).tolist(),
+        std=np.std(site_samples, axis=0).tolist(),
+        percentile_025=np.percentile(site_samples, 2.5, axis=0).tolist(),
+        percentile_500=np.percentile(site_samples, 50, axis=0).tolist(),
+        percentile_975=np.percentile(site_samples, 97.5, axis=0).tolist(),
+    )
+
+
+def current_season() -> int:
+    """Get the current NCAA season based on today's date."""
+    today = datetime.now(ZoneInfo("America/New_York"))
+    year = today.year
+    if today.month >= 11:  # November or later
+        return year + 1
+    return year
 
 
 def haversine(
@@ -133,13 +176,3 @@ def generate_ncaaw_homecourt() -> pl.DataFrame:
         schema=["Slot", "StrongSeed", "WeakSeed", "is_team1_home"],
         orient="row",
     )
-
-
-def current_season() -> int:
-    """Get the current NCAA season based on today's date."""
-
-    today = datetime.now(ZoneInfo("America/New_York"))
-    year = today.year
-    if today.month >= 11:  # November or later
-        return year + 1
-    return year

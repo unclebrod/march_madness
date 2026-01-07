@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 from march_madness.encoder import LabelEncoder, SequentialEncoder
 from march_madness.loader import DataConfig, DataConstructor, DataLoader
 from march_madness.model import MarchMadnessModel, ModelData
-from march_madness.path import OUTPUT_DIR
+from march_madness.settings import OUTPUT_DIR
 
 
 def get_quantiles(arr: jnp.ndarray, col_name: str = "value") -> pl.DataFrame:

@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from march_madness.path import OUTPUT_DIR
+from march_madness.settings import OUTPUT_DIR
 
 ROOT = "src/march_madness/pages"
 

@@ -11,7 +11,7 @@ from numpyro.infer import MCMC, NUTS, SVI, Predictive, Trace_ELBO, autoguide, in
 from pydantic import BaseModel
 
 from march_madness.log import logger
-from march_madness.path import OUTPUT_DIR
+from march_madness.settings import OUTPUT_DIR
 
 
 class Diagnostics(BaseModel):
@@ -29,10 +29,15 @@ class BaseNumpyroModel(ABC):
 
     name: ClassVar[str]
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        samples: dict[str, Any] | None = None,
+        diagnostics: Diagnostics | None = None,
+        **kwargs,
+    ) -> None:
         self.infer = None
-        self.samples = None
-        self.diagnostics = None
+        self.samples = samples
+        self.diagnostics = diagnostics
 
     @abstractmethod
     def model(self, data: Any, **kwargs) -> None: ...
@@ -48,7 +53,7 @@ class BaseNumpyroModel(ABC):
         num_steps: int = 25_000,
         seed: int = 0,
         **kwargs,
-    ):
+    ) -> None:
         rng_key = random.PRNGKey(seed)
         init_strategy = initialization.init_to_median(num_samples=100)
         match inference:

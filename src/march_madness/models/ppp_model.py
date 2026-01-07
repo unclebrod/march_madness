@@ -8,7 +8,6 @@ import numpyro.distributions as dist
 
 from march_madness.models.base_model import BaseNumpyroModel
 
-# # For each (season, team), normalize time to [0, 1]
 # recency = game_number / max_game_number_per_season_team
 # weights = jnp.exp(k * recency)
 
@@ -56,8 +55,10 @@ class PointsPerPossessionModel(BaseNumpyroModel):
     def model(
         self,
         data: PointsPerPossessionData,
-        beta_ind_std: float = 0.05,
-        beta_num_std: float = 0.05,
+        beta_ind_ppp_std: float = 0.05,
+        beta_num_ppp_std: float = 0.05,
+        beta_ind_pace_std: float = 0.05,
+        beta_num_pace_std: float = 0.05,
         offense_global_mean_std: float = 0.3,
         defense_global_mean_std: float = 0.3,
         pace_global_mean_std: float = 0.3,
@@ -75,17 +76,29 @@ class PointsPerPossessionModel(BaseNumpyroModel):
     ) -> None:
         # TODO: consider adding weighting so end of season games are more important
         # TODO: latent factor analysis?
-        # ---- Use season + 1 as the max in order to predict the next season ----
-        n_seasons = data.n_seasons + 1
-
         # ---- Fixed effects matrices ----
         n_context_ind = data.context_ind.shape[1]
         n_context_num = data.context_num.shape[1]
 
-        beta_ind = numpyro.sample("beta_ind", dist.Normal(0, beta_ind_std).expand((n_context_ind,)))
-        beta_num = numpyro.sample("beta_num", dist.Normal(0, beta_num_std).expand((n_context_num,)))
+        beta_ind_ppp = numpyro.sample(
+            "beta_ind_ppp", dist.Normal(0, beta_ind_ppp_std).expand((n_context_ind,))
+        )
+        beta_num_ppp = numpyro.sample(
+            "beta_num_ppp", dist.Normal(0, beta_num_ppp_std).expand((n_context_num,))
+        )
+        beta_ind_pace = numpyro.sample(
+            "beta_ind_pace", dist.Normal(0, beta_ind_pace_std).expand((n_context_ind,))
+        )
+        beta_num_pace = numpyro.sample(
+            "beta_num_pace", dist.Normal(0, beta_num_pace_std).expand((n_context_num,))
+        )
 
-        fixed_effects = jnp.dot(data.context_ind, beta_ind) + jnp.dot(data.context_num, beta_num)
+        fixed_effects_ppp = jnp.dot(data.context_ind, beta_ind_ppp) + jnp.dot(
+            data.context_num, beta_num_ppp
+        )
+        fixed_effects_pace = jnp.dot(data.context_ind, beta_ind_pace) + jnp.dot(
+            data.context_num, beta_num_pace
+        )
 
         # ---- Global means & standard deviations for each offense, defense, and pace ----
         offense_global_mean = numpyro.sample(
@@ -116,29 +129,29 @@ class PointsPerPossessionModel(BaseNumpyroModel):
 
         sigma_offense_team = numpyro.sample(
             "sigma_offense_team",
-            dist.Exponential(sigma_offense_team_rate),
+            dist.HalfNormal(sigma_offense_team_rate),
         )
         sigma_defense_team = numpyro.sample(
             "sigma_defense_team",
-            dist.Exponential(sigma_defense_team_rate),
+            dist.HalfNormal(sigma_defense_team_rate),
         )
         sigma_pace_team = numpyro.sample(
             "sigma_pace_team",
-            dist.Exponential(sigma_pace_team_rate),
+            dist.HalfNormal(sigma_pace_team_rate),
         )
 
         # ---- Season-specific means for each offense, defense, and pace ----
         offense_season_rw = numpyro.sample(
             "offense_season_rw",
-            dist.GaussianRandomWalk(sigma_offense_season, num_steps=n_seasons),
+            dist.GaussianRandomWalk(sigma_offense_season, num_steps=data.n_seasons),
         )
         defense_season_rw = numpyro.sample(
             "defense_season_rw",
-            dist.GaussianRandomWalk(sigma_defense_season, num_steps=n_seasons),
+            dist.GaussianRandomWalk(sigma_defense_season, num_steps=data.n_seasons),
         )
         pace_season_rw = numpyro.sample(
             "pace_season_rw",
-            dist.GaussianRandomWalk(sigma_pace_season, num_steps=n_seasons),
+            dist.GaussianRandomWalk(sigma_pace_season, num_steps=data.n_seasons),
         )
         # Center season means to assist with identifiability
         offense_season_mean = offense_global_mean + offense_season_rw - offense_season_rw.mean()
@@ -149,15 +162,15 @@ class PointsPerPossessionModel(BaseNumpyroModel):
         with numpyro.plate("teams", data.n_teams):
             offense_team_rw = numpyro.sample(
                 "offense_team_rw",
-                dist.GaussianRandomWalk(sigma_offense_team, num_steps=n_seasons),
+                dist.GaussianRandomWalk(sigma_offense_team, num_steps=data.n_seasons),
             )
             defense_team_rw = numpyro.sample(
                 "defense_team_rw",
-                dist.GaussianRandomWalk(sigma_defense_team, num_steps=n_seasons),
+                dist.GaussianRandomWalk(sigma_defense_team, num_steps=data.n_seasons),
             )
             pace_team_rw = numpyro.sample(
                 "pace_team_rw",
-                dist.GaussianRandomWalk(sigma_pace_team, num_steps=n_seasons),
+                dist.GaussianRandomWalk(sigma_pace_team, num_steps=data.n_seasons),
             )
 
         # Center team deltas to assist with identifiability
@@ -179,7 +192,7 @@ class PointsPerPossessionModel(BaseNumpyroModel):
         team2_pace = pace[data.team2, data.season]
 
         # ---- Home court advantage, both season and team ----
-        with numpyro.plate("seasons", n_seasons):
+        with numpyro.plate("seasons", data.n_seasons):
             hca_season = numpyro.sample("hca_season", dist.Normal(0, hca_season_std))
 
         with numpyro.plate("teams", data.n_teams):
@@ -193,25 +206,29 @@ class PointsPerPossessionModel(BaseNumpyroModel):
         log_team1_ppp = (
             team1_offense
             - team2_defense
-            + fixed_effects
-            + (1 - data.is_neutral)
-            * (hca_season[data.season] + hca_team[data.team1])
-            * data.team1_home
+            + fixed_effects_ppp
+            + (
+                (1 - data.is_neutral)
+                * (hca_season[data.season] + hca_team[data.team1])
+                * data.team1_home
+            )
         )
         log_team2_ppp = (
             team2_offense
             - team1_defense
-            + fixed_effects
-            + (1 - data.is_neutral)
-            * (hca_season[data.season] + hca_team[data.team2])
-            * data.team2_home
+            + fixed_effects_ppp
+            + (
+                (1 - data.is_neutral)
+                * (hca_season[data.season] + hca_team[data.team2])
+                * data.team2_home
+            )
         )
         team1_ppp = jnp.exp(log_team1_ppp)
         team2_ppp = jnp.exp(log_team2_ppp)
 
         # ---- Expected pace, possessions, and scores ----
         # These are on the log scale to assist with identifiability
-        log_expected_pace = (team1_pace + team2_pace) / 2
+        log_expected_pace = ((team1_pace + team2_pace) / 2) + fixed_effects_pace
         expected_pace = jnp.exp(log_expected_pace)
         possessions = expected_pace * data.minutes
         team1_score = team1_ppp * possessions

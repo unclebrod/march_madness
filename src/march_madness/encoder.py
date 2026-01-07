@@ -9,7 +9,7 @@ import numpy as np
 import polars as pl
 
 from march_madness.log import logger
-from march_madness.path import OUTPUT_DIR
+from march_madness.settings import OUTPUT_DIR
 
 ARRAY = pl.DataFrame | pl.Series | np.ndarray
 
@@ -57,14 +57,14 @@ class Encoder(ABC):
             raise ValueError(f"{self.__class__.__name__} instance must first be set.")
 
     def save(self, prefix: str, path: str = "M") -> None:
-        save_to = OUTPUT_DIR / f"{path}/{prefix}{self.name}encoder.pkl"
+        save_to = OUTPUT_DIR / f"{path}/{prefix}_{self.name}encoder.pkl"
         with Path(save_to).open("wb") as f:
             pickle.dump(self, f)
         logger.info(f"Saved encoder to {save_to}")
 
     @classmethod
     def load(cls, prefix: str, path: str = "M"):
-        load_from = OUTPUT_DIR / f"{path}/{prefix}{cls.name}encoder.pkl"
+        load_from = OUTPUT_DIR / f"{path}/{prefix}_{cls.name}encoder.pkl"
         with Path(load_from).open("rb") as f:
             model = pickle.load(f)
         logger.info(f"Loaded encoder from {load_from}")
@@ -103,10 +103,11 @@ class SequentialEncoder(Encoder):
 
     name: ClassVar[str] = "sequential"
 
-    def fit(self, x: ARRAY, padding: int = 1000) -> Self:
+    def fit(self, x: ARRAY, padding: int = 1) -> Self:
         x_arr = self._convert_to_numpy(x)
         arr = np.sort(np.unique(x_arr)).tolist()
-        arr += list(range(arr[-1] + 1, arr[-1] + padding + 1))
+        arr_max = max(arr)
+        arr += [arr_max + i for i in range(1, padding + 1)]
         self.encoding = dict(zip(arr, range(len(arr)), strict=False))
         self.is_fit = True
         return self

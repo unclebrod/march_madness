@@ -31,6 +31,7 @@ viz = [
     "altair>=5.5",
     "arviz>=0.21",
     "matplotlib>=3.10",
+    "seaborn>=0.13",
     "streamlit>=1.43",
     "watchdog>=6.0",
 ]

@@ -7,8 +7,12 @@ import pandas as pd
 import polars as pl
 from pydantic import BaseModel
 
-from march_madness.path import DATA_DIR, OUTPUT_DIR
-from march_madness.settings import FINAL_FOUR_REGION_SETTINGS, WITHIN_REGION_STANDARD_SEED_SETTINGS
+from march_madness.settings import (
+    DATA_DIR,
+    FINAL_FOUR_REGION_SETTINGS,
+    OUTPUT_DIR,
+    WITHIN_REGION_STANDARD_SEED_SETTINGS,
+)
 from march_madness.utils import (
     current_season,
     derive_rest_days,
@@ -129,6 +133,7 @@ class DataConstructor:
         # TODO: can we incorporate SecondaryTourneyCompactResults? only has final scores with no box scores
         # TODO: can we incorporate city/travel? have game-city location but don't no where teams are located
         # TODO: consider incorporating coaches?
+        teams = self.data_loader.load_data(self.data_config.teams)
         regular_season_results = self.data_loader.load_data(
             self.data_config.regular_season_detailed_results
         )
@@ -202,6 +207,30 @@ class DataConstructor:
                 on=["Season", "LTeamID"],
             )
             .join(
+                teams.rename(
+                    {
+                        "TeamID": "WTeamID",
+                        "TeamName": "team1_name",
+                        "FirstD1Season": "team1_first_d1_season",
+                        "LastD1Season": "team1_last_d1_season",
+                    }
+                ),
+                how="left",
+                on=["WTeamID"],
+            )
+            .join(
+                teams.rename(
+                    {
+                        "TeamID": "LTeamID",
+                        "TeamName": "team2_name",
+                        "FirstD1Season": "team2_first_d1_season",
+                        "LastD1Season": "team2_last_d1_season",
+                    }
+                ),
+                how="left",
+                on=["LTeamID"],
+            )
+            .join(
                 conference_tourney_games.rename({"ConfAbbrev": "conf_tourney_abbr"}),
                 how="left",
                 on=["Season", "DayNum", "WTeamID", "LTeamID"],
@@ -239,6 +268,9 @@ class DataConstructor:
             )
             .with_row_index("game_id")
             .with_columns(
+                days_into_season_norm=pl.col("days_into_season").truediv(
+                    pl.col("days_into_season").max().over("season")
+                ),
                 days_into_season_sq=pl.col("days_into_season").pow(2),
                 date=pl.col("day_zero").add(pl.duration(days=pl.col("day_num"))),
                 minutes=pl.lit(40).add(pl.col("num_ot").mul(pl.lit(5))),
@@ -252,6 +284,7 @@ class DataConstructor:
                 team2_poss=_poss_expr("team2"),
             )
             .with_columns(
+                days_into_season_norm_sq=pl.col("days_into_season_norm").pow(2),
                 team1_ppp=pl.col("team1_score").truediv(pl.col("team1_poss")),
                 team2_ppp=pl.col("team2_score").truediv(pl.col("team2_poss")),
                 team1_pace=pl.col("team1_poss").truediv(pl.col("minutes")),

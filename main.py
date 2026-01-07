@@ -135,6 +135,9 @@ def ppp(
         num_steps=num_steps,
         learning_rate=learning_rate,
     )
+    trainer = PointsPerPossessionTrainer.load()
+    inference = trainer.infer()
+    print("ok")
 
 
 if __name__ == "__main__":

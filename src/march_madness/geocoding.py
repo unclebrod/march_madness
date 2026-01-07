@@ -9,7 +9,7 @@ import requests
 from pydantic import BaseModel
 
 from march_madness.loader import DataConfig, DataLoader
-from march_madness.path import DATA_DIR
+from march_madness.settings import DATA_DIR
 
 STATUS = Literal[
     "OK",

@@ -12,7 +12,7 @@ from jax.nn import softplus
 from numpyro.infer import MCMC, NUTS, SVI, Predictive, Trace_ELBO, autoguide, initialization
 
 from march_madness.log import logger
-from march_madness.path import OUTPUT_DIR
+from march_madness.settings import OUTPUT_DIR
 
 
 @dataclass
