@@ -117,10 +117,7 @@ def model(data: ModelData) -> None:
     # expected points per possession
     hca_ppp = numpyro.sample("hca", dist.HalfNormal(0.01))
     team1_ppp = softplus(
-        team1_offense_ppp
-        - team2_defense_ppp
-        + context_ppp
-        + (1 - data.is_neutral) * hca_ppp * data.is_team1_home
+        team1_offense_ppp - team2_defense_ppp + context_ppp + (1 - data.is_neutral) * hca_ppp * data.is_team1_home
     )
 
     # expected pace
@@ -141,9 +138,7 @@ def model(data: ModelData) -> None:
     phi_score = numpyro.sample("phi_score", dist.Exponential(0.01))
 
     numpyro.sample("possessions", dist.Normal(possessions, sigma_poss), obs=data.avg_poss)
-    numpyro.sample(
-        "team1_score", dist.NegativeBinomial2(team1_score, phi_score), obs=data.team1_score
-    )
+    numpyro.sample("team1_score", dist.NegativeBinomial2(team1_score, phi_score), obs=data.team1_score)
 
 
 class MarchMadnessModel:

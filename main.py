@@ -1,18 +1,26 @@
 """Main entry point for March Madness modeling and analysis."""
 
 import numpyro
-import typer
+from cyclopts import App
 from dotenv import find_dotenv, load_dotenv
 
 from march_madness import dashboard, geocoding
 from march_madness.loader import DataConstructor
+from march_madness.models.base_model import McmcParams, SviParams
 from march_madness.trainer import Trainer
+from march_madness.trainers.elo_trainer import EloTrainer
 from march_madness.trainers.ppp_trainer import PointsPerPossessionTrainer
 
-app = typer.Typer()
+TRAINER_MAP = {
+    "ppp": PointsPerPossessionTrainer,
+    "elo": EloTrainer,
+}
 
 
-@app.command("train")
+app = App()
+
+
+@app.command
 def train(
     league: str = "M",
     inference: str = "svi",
@@ -40,7 +48,7 @@ def train(
         trainer.save(path=league)
 
 
-@app.command("predict")
+@app.command
 def predict(
     league: str = "M",
 ) -> None:
@@ -52,7 +60,7 @@ def predict(
     )
 
 
-@app.command("infer")
+@app.command
 def infer(
     league: str = "M",
     *,
@@ -64,7 +72,7 @@ def infer(
     )
 
 
-@app.command("submit")
+@app.command
 def submit(
     league: str = "M",
     suffix: str | None = None,
@@ -78,7 +86,7 @@ def submit(
     )
 
 
-@app.command("final")
+@app.command
 def final(
     suffix: str | None = None,
 ) -> None:
@@ -86,7 +94,7 @@ def final(
     data_constructor.get_final_submission(suffix=suffix)
 
 
-@app.command("bracket")
+@app.command
 def bracket(
     league: str = "M",
     suffix: str | None = None,
@@ -100,43 +108,40 @@ def bracket(
     )
 
 
-@app.command("streamlit")
+@app.command
 def streamlit() -> None:
     dashboard.main()
 
 
-@app.command("geocode")
+@app.command
 def geocode() -> None:
     geocoding.geocode_cities()
 
 
 # TODO: eventually make this the main method after testing
-@app.command("ppp")
+@app.command
 def ppp(
     league: str = "M",
+    model: str = "ppp",
     inference: str = "svi",
-    num_warmup: int = 1_000,
     num_samples: int = 1_000,
-    num_chains: int = 4,
-    learning_rate: float = 0.01,
-    num_steps: int = 25_000,
+    mcmc_params: McmcParams | None = None,
+    svi_params: SviParams | None = None,
     *,
     save: bool = True,
 ) -> None:
     data_constructor = DataConstructor(league=league)
-    trainer = PointsPerPossessionTrainer(league=league)
+    trainer = TRAINER_MAP[model](league=league)
     box_scores = data_constructor.load_game_team_box_scores()
     trainer.train(
         df=box_scores,
         inference=inference,
-        num_warmup=num_warmup,
         num_samples=num_samples,
-        num_chains=num_chains,
-        num_steps=num_steps,
-        learning_rate=learning_rate,
+        mcmc_params=mcmc_params,
+        svi_params=svi_params,
     )
-    trainer = PointsPerPossessionTrainer.load()
     inference = trainer.infer()
+    trainer.predict(df=box_scores)
     print("ok")
 
 

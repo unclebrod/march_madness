@@ -19,17 +19,23 @@ from march_madness.utils import summarize_samples
 CONTEXT_INDICATOR_COLUMNS = [
     "is_ncaa_tourney",
     "is_conf_tourney",
+    "team1_b2b",
+    "team1_2in3",
+    "team1_3in4",
+    "team1_4in5",
+    "team2_b2b",
+    "team2_2in3",
+    "team2_3in4",
+    "team2_4in5",
 ]
 
 CONTEXT_NUMERIC_COLUMNS = [
     "days_into_season_norm",
     "days_into_season_norm_sq",
-    "log_travel_distance_diff",
-    "log_elevation_diff",
-    "fatigue_effect_1",
-    "fatigue_effect_2",
-    "fatigue_effect_3",
-    "fatigue_effect_4",
+    "team1_log_travel_distance_diff",
+    "team1_log_elevation_diff",
+    "team2_log_travel_distance_diff",
+    "team2_log_elevation_diff",
 ]
 
 
@@ -39,12 +45,16 @@ class PointsPerPossessionInference:
     season_coef_df: pl.DataFrame
     team_coef_df: pl.DataFrame
     season_team_coef_df: pl.DataFrame
+    coach_coef_df: pl.DataFrame
+    game_outputs_df: pl.DataFrame
 
     def save(self, path: str = "M") -> None:
         self.coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/coefs.csv")
         self.season_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/season_coefs.csv")
         self.team_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/team_coefs.csv")
         self.season_team_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/season_team_coefs.csv")
+        self.coach_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/coach_coefs.csv")
+        self.game_outputs_df.write_csv(OUTPUT_DIR / f"{path}/ppp/game_outputs.csv")
 
 
 class PointsPerPossessionTrainer(BaseTrainer):
@@ -63,8 +73,8 @@ class PointsPerPossessionTrainer(BaseTrainer):
             }
         super().__init__(preprocessors=preprocessors, **kwargs)
 
-    def train(self, df: pl.DataFrame, **kwargs) -> None:
-        train_df = df.filter(
+    def _filter_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
+        filtered_df = df.filter(
             pl.col("team1_score").is_not_null(),
             pl.col("team2_score").is_not_null(),
             pl.col("avg_poss").is_not_null(),
@@ -73,8 +83,12 @@ class PointsPerPossessionTrainer(BaseTrainer):
             pl.col("team2_id").is_not_null(),
         )
         logger.info(
-            f"Removed {len(df) - len(train_df)} rows with missing values ({len(train_df) / len(df):.2%})."
+            f"Removed {len(df) - len(filtered_df)} rows with missing values ({len(filtered_df) / len(df):.2%})."
         )
+        return filtered_df
+
+    def train(self, df: pl.DataFrame, **kwargs) -> None:
+        train_df = self._filter_dataframe(df)
 
         context_num = train_df.select(CONTEXT_NUMERIC_COLUMNS).to_numpy()
         context_num_imputed = self.preprocessors["imputer"].fit_transform(context_num)
@@ -88,8 +102,10 @@ class PointsPerPossessionTrainer(BaseTrainer):
         self.model.fit(data=data, **kwargs)
 
     def predict(self, df: pl.DataFrame, **kwargs) -> pl.DataFrame:
-        data = self.generate_data(df, predict=True)
-        return self.model.predict(data=data, **kwargs)
+        predict_df = self._filter_dataframe(df)
+        data = self.generate_data(predict_df, predict=True)
+        samples = self.model.predict(data=data, **kwargs)
+        print("ok")
 
     def generate_data(
         self,
@@ -98,21 +114,22 @@ class PointsPerPossessionTrainer(BaseTrainer):
         predict: bool = False,
         **kwargs,
     ) -> PointsPerPossessionData:
-        context_num = self.preprocessors["imputer"].transform(
-            df.select(CONTEXT_NUMERIC_COLUMNS).to_numpy()
-        )
+        context_num = self.preprocessors["imputer"].transform(df.select(CONTEXT_NUMERIC_COLUMNS).to_numpy())
         context_num = self.preprocessors["scaler"].transform(context_num)
+        context_ind = jnp.asarray(df.select(CONTEXT_INDICATOR_COLUMNS).to_numpy())
+        context = jnp.concatenate([context_ind, jnp.asarray(context_num)], axis=1)
 
         return PointsPerPossessionData(
-            context_ind=jnp.asarray(df.select(CONTEXT_INDICATOR_COLUMNS).to_numpy()),
-            context_num=jnp.asarray(context_num),
+            context=context,
             n_teams=len(self.preprocessors["team_encoder"].classes_),
             n_seasons=len(self.preprocessors["season_encoder"].classes_),
+            n_coaches=len(self.preprocessors["coach_encoder"].classes_),
             season=self.preprocessors["season_encoder"].transform(df["season"]),
             team1=self.preprocessors["team_encoder"].transform(df["team1_id"]),
             team2=self.preprocessors["team_encoder"].transform(df["team2_id"]),
+            team1_coach=self.preprocessors["coach_encoder"].transform(df["team1_coach"]),
+            team2_coach=self.preprocessors["coach_encoder"].transform(df["team2_coach"]),
             minutes=df["minutes"].to_jax(),
-            is_neutral=df["is_neutral"].to_jax(),
             team1_home=df["team1_home"].to_jax(),
             team2_home=df["team2_home"].to_jax(),
             avg_poss=df["avg_poss"].to_jax() if not predict else None,
@@ -120,12 +137,14 @@ class PointsPerPossessionTrainer(BaseTrainer):
             team2_score=df["team2_score"].to_jax() if not predict else None,
         )
 
-    def infer(self) -> PointsPerPossessionInference:
+    def infer(self, *, save: bool = True, **kwargs) -> PointsPerPossessionInference:
         """Run inference on the trained model."""
         coef_list: list[pl.DataFrame] = []
         season_list: list[pl.DataFrame] = []
         team_list: list[pl.DataFrame] = []
         season_team_list: list[pl.DataFrame] = []
+        coach_list: list[pl.DataFrame] = []
+        game_list: list[pl.DataFrame] = []
 
         season_classes = self.preprocessors["season_encoder"].classes_
         team_classes = self.preprocessors["team_encoder"].classes_
@@ -168,6 +187,14 @@ class PointsPerPossessionTrainer(BaseTrainer):
                 season_list.append(df)
                 continue
 
+            if k in ["coach"]:
+                df = pl.DataFrame(summary_dict).with_columns(
+                    name=pl.lit(k),
+                    coach_name=pl.Series(self.preprocessors["coach_encoder"].classes_),
+                )
+                coach_list.append(df)
+                continue
+
             if k in ["hca_team"]:
                 df = pl.DataFrame(summary_dict).with_columns(
                     name=pl.lit(k),
@@ -176,24 +203,26 @@ class PointsPerPossessionTrainer(BaseTrainer):
                 team_list.append(df)
                 continue
 
-            if (
-                k
-                in [
-                    "defense_global_mean",
-                    "offense_global_mean",
-                    "pace_global_mean",
-                    "phi_score",
-                ]
-                or "sigma" in k
-            ):
-                df = pl.DataFrame(summary_dict).with_columns(name=pl.lit(k))
-            elif "beta_ind" in k:
+            if k in [
+                "team1_ppp",
+                "team2_ppp",
+                "pace",
+                "spread",
+                "total",
+                "team1_win_prob",
+                "team2_win_prob",
+            ]:
                 df = pl.DataFrame(summary_dict).with_columns(
-                    name=pl.Series([f"{k}_{x}" for x in CONTEXT_INDICATOR_COLUMNS]),
+                    name=pl.lit(k),
                 )
-            elif "beta_num" in k:
+                game_list.append(df)
+                continue
+
+            if any(x in k for x in ["sigma", "phi", "global_mean", "hca_team_mu"]):
+                df = pl.DataFrame(summary_dict).with_columns(name=pl.lit(k))
+            elif "beta" in k:
                 df = pl.DataFrame(summary_dict).with_columns(
-                    name=pl.Series([f"{k}_{x}" for x in CONTEXT_NUMERIC_COLUMNS]),
+                    name=pl.Series([f"{k}_{x}" for x in CONTEXT_INDICATOR_COLUMNS + CONTEXT_NUMERIC_COLUMNS]),
                 )
             else:
                 logger.warning(f"Unhandled posterior sample key: {k}")
@@ -208,6 +237,9 @@ class PointsPerPossessionTrainer(BaseTrainer):
             season_team_coef_df=pl.concat(season_team_list, how="vertical_relaxed").join(
                 teams, on="team_id", how="left"
             ),
+            coach_coef_df=pl.concat(coach_list),
+            game_outputs_df=pl.concat(game_list),
         )
-        inference.save(path=self.league)
+        if save:
+            inference.save(path=self.league)
         return inference

@@ -42,6 +42,11 @@ class BaseTrainer(ABC):
         """Method responsible for generating data for training or prediction."""
         pass
 
+    @abstractmethod
+    def infer(self, **kwargs) -> Any:
+        """Method responsible for running inference."""
+        pass
+
     def save(self, path: str = "M") -> None:
         """Saves the trainer instance to disk."""
         save_to = OUTPUT_DIR / f"{path}/{self.model.name}/trainer.joblib"

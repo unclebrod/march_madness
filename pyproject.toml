@@ -9,6 +9,7 @@ requires-python = ">=3.12"
 license = {text = "MIT"}
 dynamic = ["version"]
 dependencies = [
+    "cyclopts>=4.4.4",
     "dill>=0.3",
     # "jaxlib<0.5.0",
     "jax-metal>=0.1.1",
@@ -20,7 +21,6 @@ dependencies = [
     "python-dotenv>=1.0",
     "rich>=13.9",
     "scikit-learn>=1.6",
-    "typer>=0.15",
 ]
 
 [dependency-groups]
@@ -71,4 +71,4 @@ fixable = ["ALL"]
 convention = "numpy"
 
 [tool.ruff]
-line-length = 100
+line-length = 120

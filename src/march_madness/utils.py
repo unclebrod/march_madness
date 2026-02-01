@@ -100,11 +100,7 @@ def derive_team_locations(game_team_box_scores: pl.DataFrame) -> pl.DataFrame:
         .sort(["season", "team_id"])
         .with_columns(pl.col("city", "state").backward_fill().over(["team_id"]))
     )
-    cities = (
-        game_team_box_scores.select(["city", "state", "lat", "lng", "elevation"])
-        .unique()
-        .drop_nulls()
-    )
+    cities = game_team_box_scores.select(["city", "state", "lat", "lng", "elevation"]).unique().drop_nulls()
     return team_locations.join(cities, on=["city", "state"], how="left")
 
 
@@ -112,17 +108,14 @@ def derive_rest_days(game_team_box_scores: pl.DataFrame) -> pl.DataFrame:
     """Derive rest days for teams based on game dates."""
     return (
         game_team_box_scores.select(
-            pl.col("game_id"),
+            pl.col("ID"),
             pl.col("season"),
             pl.col("team1_id").alias("team_id"),
             pl.col("days_into_season"),
         )
         .sort(["season", "team_id", "days_into_season"])
         .with_columns(
-            **{
-                f"days_rest_{x}": pl.col("days_into_season").diff(x).over(["team_id", "season"])
-                for x in range(1, 4)
-            }
+            **{f"days_rest_{x}": pl.col("days_into_season").diff(x).over(["team_id", "season"]) for x in range(1, 4)}
         )
         .with_columns(
             pl.col("days_rest_1").lt(1.5).alias("b2b").cast(pl.Int8).fill_null(0),
@@ -173,6 +166,6 @@ def generate_ncaaw_homecourt() -> pl.DataFrame:
 
     return pl.DataFrame(
         matchups,
-        schema=["Slot", "StrongSeed", "WeakSeed", "is_team1_home"],
+        schema=["Slot", "StrongSeed", "WeakSeed", "team1_home"],
         orient="row",
     )

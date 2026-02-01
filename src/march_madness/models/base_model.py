@@ -6,12 +6,15 @@ from typing import Any, ClassVar, Literal, Self
 
 import dill as pickle
 import optax
+from cyclopts import Parameter
 from jax import random
 from numpyro.infer import MCMC, NUTS, SVI, Predictive, Trace_ELBO, autoguide, initialization
 from pydantic import BaseModel
 
 from march_madness.log import logger
 from march_madness.settings import OUTPUT_DIR
+
+INFERENCE = Literal["mcmc", "svi"]
 
 
 class Diagnostics(BaseModel):
@@ -22,6 +25,18 @@ class Diagnostics(BaseModel):
 class SavePayload(BaseModel):
     samples: dict[str, Any]
     diagnostics: Diagnostics | None = None
+
+
+@Parameter(name="*")
+class McmcParams(BaseModel):
+    num_warmup: int = 1_000
+    num_chains: int = 4
+
+
+@Parameter(name="*")
+class SviParams(BaseModel):
+    learning_rate: float = 0.01
+    num_steps: int = 25_000
 
 
 class BaseNumpyroModel(ABC):
@@ -46,11 +61,9 @@ class BaseNumpyroModel(ABC):
         self,
         data: Any,
         inference: Literal["mcmc", "svi"] = "svi",
-        num_warmup: int = 1_000,
-        num_samples: int = 1_000,
-        num_chains: int = 4,
-        learning_rate: float = 0.01,
-        num_steps: int = 25_000,
+        num_samples: int = 5_000,
+        mcmc_params: McmcParams | None = None,
+        svi_params: SviParams | None = None,
         seed: int = 0,
         **kwargs,
     ) -> None:
@@ -58,21 +71,23 @@ class BaseNumpyroModel(ABC):
         init_strategy = initialization.init_to_median(num_samples=100)
         match inference:
             case "mcmc":
+                mcmc_params = mcmc_params or McmcParams()
                 kernel = NUTS(self.model, init_strategy=init_strategy)
                 self.infer = MCMC(
                     sampler=kernel,
-                    num_warmup=num_warmup,
+                    num_warmup=mcmc_params.num_warmup,
                     num_samples=num_samples,
-                    num_chains=num_chains,
+                    num_chains=mcmc_params.num_chains,
                 )
                 self.infer.run(rng_key, data)
                 self.infer.print_summary()
                 self.samples = self.infer.get_samples()
 
             case "svi":
+                svi_params = svi_params or SviParams()
                 schedule = optax.linear_onecycle_schedule(
-                    peak_value=learning_rate,
-                    transition_steps=num_steps,
+                    peak_value=svi_params.learning_rate,
+                    transition_steps=svi_params.num_steps,
                 )
                 optimizer = optax.adamw(learning_rate=schedule)
                 guide = autoguide.AutoNormal(self.model)
@@ -83,7 +98,7 @@ class BaseNumpyroModel(ABC):
                     loss=Trace_ELBO(),
                     **kwargs,
                 )
-                results = self.infer.run(rng_key, num_steps, data)
+                results = self.infer.run(rng_key, svi_params.num_steps, data)
                 self.diagnostics = Diagnostics(
                     svi_losses=results.losses.tolist(),
                     final_elbo=results.losses.tolist()[-1],
@@ -98,12 +113,12 @@ class BaseNumpyroModel(ABC):
             case _:
                 raise NotImplementedError("The provided inference method is not implemented.")
 
-    def predict(self, data: Any, seed: int = 0) -> dict[str, Any]:
+    def predict(self, data: Any, seed: int = 0, **kwargs) -> dict[str, Any]:
         if self.samples is None:
             raise ValueError("Model must be fitted before predictions can be made.")
         rng_key = random.PRNGKey(seed)
         predictive = Predictive(self.model, self.samples)
-        return predictive(rng_key, data=data)
+        return predictive(rng_key, data=data, **kwargs)
 
     def save(self, path: str = "M") -> None:
         save_to = OUTPUT_DIR / f"{path}/{self.name}/model.pkl"

@@ -33,9 +33,7 @@ for bracket, name in zip(brackets, names):
         bracket.rename({"": "Team"})
         .select(pl.col("Team"), pl.col(round))
         .with_columns(Name=pl.lit(name))
-        .with_columns(
-            pl.col("Team").str.to_lowercase().str.replace_all(r"[^\w\s]", "").str.replace(" ", "")
-        )
+        .with_columns(pl.col("Team").str.to_lowercase().str.replace_all(r"[^\w\s]", "").str.replace(" ", ""))
     )
     df_list.append(df)
 

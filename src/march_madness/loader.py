@@ -1,6 +1,6 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Generic, Literal, TypeVar
+from typing import Literal, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -61,49 +61,33 @@ class FileConfig(BaseModel):
     men_only: bool = False
 
 
-class DataConfig(Generic[T]):
+class DataConfig[T]:
     """Container for keeping track of file loading configurations."""
 
     cities: T = FileConfig(filename="Cities", requires_league=False)
     cities_geocoded: T = FileConfig(filename="CitiesGeocoded", requires_league=False)
     conferences: T = FileConfig(filename="Conferences", requires_league=False)
-    conference_tourney_games: T = FileConfig(
-        filename="ConferenceTourneyGames", requires_league=True
-    )
+    conference_tourney_games: T = FileConfig(filename="ConferenceTourneyGames", requires_league=True)
     game_cities: T = FileConfig(filename="GameCities", requires_league=True)
     massey_ordinals: T = FileConfig(filename="MasseyOrdinals", requires_league=True, men_only=True)
-    ncaa_tourney_compact_results: T = FileConfig(
-        filename="NCAATourneyCompactResults", requires_league=True
-    )
-    ncaa_tourney_detailed_results: T = FileConfig(
-        filename="NCAATourneyDetailedResults", requires_league=True
-    )
+    ncaa_tourney_compact_results: T = FileConfig(filename="NCAATourneyCompactResults", requires_league=True)
+    ncaa_tourney_detailed_results: T = FileConfig(filename="NCAATourneyDetailedResults", requires_league=True)
     ncaa_tourney_seed_round_slots: T = FileConfig(
         filename="NCAATourneySeedRoundSlots", requires_league=True, men_only=True
     )
     ncaa_tourney_seeds: T = FileConfig(filename="NCAATourneySeeds", requires_league=True)
     ncaa_tourney_slots: T = FileConfig(filename="NCAATourneySlots", requires_league=True)
-    regular_season_compact_results: T = FileConfig(
-        filename="RegularSeasonCompactResults", requires_league=True
-    )
-    regular_season_detailed_results: T = FileConfig(
-        filename="RegularSeasonDetailedResults", requires_league=True
-    )
+    regular_season_compact_results: T = FileConfig(filename="RegularSeasonCompactResults", requires_league=True)
+    regular_season_detailed_results: T = FileConfig(filename="RegularSeasonDetailedResults", requires_league=True)
     seasons: T = FileConfig(filename="Seasons", requires_league=True)
-    secondary_tourney_compact_results: T = FileConfig(
-        filename="SecondaryTourneyCompactResults", requires_league=True
-    )
+    secondary_tourney_compact_results: T = FileConfig(filename="SecondaryTourneyCompactResults", requires_league=True)
     secondary_tourney_teams: T = FileConfig(filename="SecondaryTourneyTeams", requires_league=True)
     team_coaches: T = FileConfig(filename="TeamCoaches", requires_league=True, men_only=True)
     team_conferences: T = FileConfig(filename="TeamConferences", requires_league=True)
     teams: T = FileConfig(filename="Teams", requires_league=True)
     team_spellings: T = FileConfig(filename="TeamSpellings", requires_league=True)
-    sample_submissions_stage_1: T = FileConfig(
-        filename="SampleSubmissionStage1", requires_league=False
-    )
-    sample_submissions_stage_2: T = FileConfig(
-        filename="SampleSubmissionStage2", requires_league=False
-    )
+    sample_submissions_stage_1: T = FileConfig(filename="SampleSubmissionStage1", requires_league=False)
+    sample_submissions_stage_2: T = FileConfig(filename="SampleSubmissionStage2", requires_league=False)
     seed_benchmark_stage_1: T = FileConfig(filename="SeedBenchmarkStage1", requires_league=False)
 
 
@@ -130,21 +114,12 @@ class DataConstructor:
 
     def load_game_box_scores(self) -> pl.DataFrame:
         """Return box score and other game-level information with one row per game."""
-        # TODO: can we incorporate SecondaryTourneyCompactResults? only has final scores with no box scores
-        # TODO: can we incorporate city/travel? have game-city location but don't no where teams are located
-        # TODO: consider incorporating coaches?
         teams = self.data_loader.load_data(self.data_config.teams)
-        regular_season_results = self.data_loader.load_data(
-            self.data_config.regular_season_detailed_results
-        )
+        regular_season_results = self.data_loader.load_data(self.data_config.regular_season_detailed_results)
         playoff_results = self.data_loader.load_data(self.data_config.ncaa_tourney_detailed_results)
-        secondary_results = self.data_loader.load_data(
-            self.data_config.secondary_tourney_compact_results
-        )
+        secondary_results = self.data_loader.load_data(self.data_config.secondary_tourney_compact_results)
         conferences = self.data_loader.load_data(self.data_config.team_conferences)
-        conference_tourney_games = self.data_loader.load_data(
-            self.data_config.conference_tourney_games
-        )
+        conference_tourney_games = self.data_loader.load_data(self.data_config.conference_tourney_games)
         seasons = self.data_loader.load_data(self.data_config.seasons)
         game_cities = self.data_loader.load_data(self.data_config.game_cities)
         cities = self.data_loader.load_data(self.data_config.cities_geocoded)
@@ -266,7 +241,7 @@ class DataConstructor:
                 day_zero=pl.col("day_zero").str.to_date("%m/%d/%Y"),
                 days_into_season=pl.col("day_num").sub(pl.col("day_num").min().over("season")),
             )
-            .with_row_index("game_id")
+            .with_row_index("ID")
             .with_columns(
                 days_into_season_norm=pl.col("days_into_season").truediv(
                     pl.col("days_into_season").max().over("season")
@@ -274,7 +249,8 @@ class DataConstructor:
                 days_into_season_sq=pl.col("days_into_season").pow(2),
                 date=pl.col("day_zero").add(pl.duration(days=pl.col("day_num"))),
                 minutes=pl.lit(40).add(pl.col("num_ot").mul(pl.lit(5))),
-                spread=pl.col("team2_score").sub(pl.col("team1_score")),
+                spread=pl.col("team1_score").sub(pl.col("team2_score")),
+                total=pl.col("team1_score").add(pl.col("team2_score")),
                 team1_home=pl.col("team1_loc").eq("H").cast(int),
                 team2_home=pl.col("team2_loc").eq("H").cast(int),
                 is_neutral=pl.col("team1_loc").eq("N").cast(int),
@@ -289,23 +265,21 @@ class DataConstructor:
                 team2_ppp=pl.col("team2_score").truediv(pl.col("team2_poss")),
                 team1_pace=pl.col("team1_poss").truediv(pl.col("minutes")),
                 team2_pace=pl.col("team2_poss").truediv(pl.col("minutes")),
-                avg_poss=pl.col("team1_poss").add(pl.col("team2_poss")).truediv(2),
+                avg_poss=pl.col("team1_poss").add(pl.col("team2_poss")).truediv(2).round(0),
             )
             .with_columns(
                 team1_ppp=pl.col("team1_score").truediv(pl.col("avg_poss")),
                 team2_ppp=pl.col("team2_score").truediv(pl.col("avg_poss")),
                 avg_pace=pl.col("avg_poss").truediv(pl.col("minutes")),
             )
-            .sort(["season", "game_id", "day_num", "team1_id"])
+            .sort(["season", "ID", "day_num", "team1_id"])
         )
         if self.league == "M":
             # TODO: check if this changes - as of now, these are men's only data
             coaches = self.data_loader.load_data(self.data_config.team_coaches)
             massey_ordinals = (
                 self.data_loader.load_data(self.data_config.massey_ordinals)
-                .with_columns(
-                    SystemName=pl.format("ranking_{}", pl.col("SystemName").str.to_lowercase())
-                )
+                .with_columns(SystemName=pl.format("ranking_{}", pl.col("SystemName").str.to_lowercase()))
                 .pivot(
                     on=["SystemName"],
                     index=["Season", "RankingDayNum", "TeamID"],
@@ -339,22 +313,18 @@ class DataConstructor:
                 .rename({"CoachName": "team2_coach"})
                 .sort(["season", "team1_id", "day_num"])
                 .join_asof(
-                    massey_ordinals.rename(
-                        {x: f"team1_{x}" for x in rank_cols} | {"team_id": "team1_id"}
-                    ),
+                    massey_ordinals.rename({x: f"team1_{x}" for x in rank_cols} | {"team_id": "team1_id"}),
                     by=["season", "team1_id"],
                     on="day_num",
                     strategy="backward",
                 )
                 .join_asof(
-                    massey_ordinals.rename(
-                        {x: f"team2_{x}" for x in rank_cols} | {"team_id": "team2_id"}
-                    ),
+                    massey_ordinals.rename({x: f"team2_{x}" for x in rank_cols} | {"team_id": "team2_id"}),
                     by=["season", "team2_id"],
                     on="day_num",
                     strategy="backward",
                 )
-                .sort(["season", "game_id", "day_num", "team1_id"])
+                .sort(["season", "ID", "day_num", "team1_id"])
             )
 
         return df
@@ -363,9 +333,7 @@ class DataConstructor:
         """Return box score and other game-level information with one row per team-game (two rows per game)."""
         game_box_scores = self.load_game_box_scores()
         rename_dict = {
-            col: col.replace("team1_", "TEMP_")
-            .replace("team2_", "team1_")
-            .replace("TEMP_", "team2_")
+            col: col.replace("team1_", "TEMP_").replace("team2_", "team1_").replace("TEMP_", "team2_")
             for col in game_box_scores.columns
             if col.startswith("team1_") or col.startswith("team2_")
         }
@@ -377,7 +345,7 @@ class DataConstructor:
                 .select(game_box_scores.columns),
             ],
             how="vertical",
-        ).sort("season", "game_id", "day_num", "team1_id")
+        ).sort("season", "ID", "day_num", "team1_id")
         team_locations = derive_team_locations(game_team_box_scores)
         team_rest = derive_rest_days(game_team_box_scores)
         return (
@@ -419,7 +387,7 @@ class DataConstructor:
                         "4in5": "team1_4in5",
                     }
                 ),
-                on=["season", "team1_id", "game_id"],
+                on=["season", "team1_id", "ID"],
                 how="left",
             )
             .join(
@@ -432,7 +400,7 @@ class DataConstructor:
                         "4in5": "team2_4in5",
                     }
                 ),
-                on=["season", "team2_id", "game_id"],
+                on=["season", "team2_id", "ID"],
                 how="left",
             )
             .with_columns(
@@ -451,26 +419,40 @@ class DataConstructor:
                 .otherwise(haversine(lat1="team2_lat", lon1="team2_lng", lat2="lat", lon2="lng")),
             )
             .with_columns(
-                # Will use convential of team2 - team1 for consistency with spread
+                # Will use convention of team1 - team2 for consistency with spread
                 **{
-                    "travel_distance_diff": pl.col("team2_travel_distance").sub(
-                        pl.col("team1_travel_distance")
-                    ),
-                    "elevation_diff": pl.col("team2_elevation").sub(pl.col("team1_elevation")),
-                    "b2b_diff": pl.col("team2_b2b").sub(pl.col("team1_b2b")),
-                    "2in3_diff": pl.col("team2_2in3").sub(pl.col("team1_2in3")),
-                    "3in4_diff": pl.col("team2_3in4").sub(pl.col("team1_3in4")),
-                    "4in5_diff": pl.col("team2_4in5").sub(pl.col("team1_4in5")),
+                    "team1_travel_distance_diff": pl.col("team1_travel_distance").sub(pl.col("team2_travel_distance")),
+                    "team1_elevation_diff": pl.col("team1_elevation").sub(pl.col("team2_elevation")),
+                    "team2_travel_distance_diff": pl.col("team2_travel_distance").sub(pl.col("team1_travel_distance")),
+                    "team2_elevation_diff": pl.col("team2_elevation").sub(pl.col("team1_elevation")),
+                    "b2b_diff": pl.col("team1_b2b").sub(pl.col("team2_b2b")),
+                    "2in3_diff": pl.col("team1_2in3").sub(pl.col("team2_2in3")),
+                    "3in4_diff": pl.col("team1_3in4").sub(pl.col("team2_3in4")),
+                    "4in5_diff": pl.col("team1_4in5").sub(pl.col("team2_4in5")),
                 },
             )
             .with_columns(
-                log_travel_distance_diff=pl.when(pl.col("travel_distance_diff").gt(0))
-                .then(pl.col("travel_distance_diff").log1p())
-                .otherwise(pl.col("travel_distance_diff").mul(pl.lit(-1)).log1p().mul(pl.lit(-1))),
-                log_elevation_diff=pl.when(pl.col("elevation_diff").gt(0))
-                .then(pl.col("elevation_diff").log1p())
-                .otherwise(pl.col("elevation_diff").mul(pl.lit(-1)).log1p().mul(pl.lit(-1))),
+                team1_log_travel_distance_diff=pl.when(pl.col("team1_travel_distance_diff").gt(0))
+                .then(pl.col("team1_travel_distance_diff").log1p())
+                .otherwise(pl.col("team1_travel_distance_diff").mul(pl.lit(-1)).log1p().mul(pl.lit(-1))),
+                team1_log_elevation_diff=pl.when(pl.col("team1_elevation_diff").gt(0))
+                .then(pl.col("team1_elevation_diff").log1p())
+                .otherwise(pl.col("team1_elevation_diff").mul(pl.lit(-1)).log1p().mul(pl.lit(-1))),
+                team2_log_travel_distance_diff=pl.when(pl.col("team2_travel_distance_diff").gt(0))
+                .then(pl.col("team2_travel_distance_diff").log1p())
+                .otherwise(pl.col("team2_travel_distance_diff").mul(pl.lit(-1)).log1p().mul(pl.lit(-1))),
+                team2_log_elevation_diff=pl.when(pl.col("team2_elevation_diff").gt(0))
+                .then(pl.col("team2_elevation_diff").log1p())
+                .otherwise(pl.col("team2_elevation_diff").mul(pl.lit(-1)).log1p().mul(pl.lit(-1))),
                 fatigue_effect_1=pl.col("b2b_diff"),
+                fatigue_score_diff=pl.sum_horizontal(
+                    [
+                        pl.col("b2b_diff"),
+                        pl.col("2in3_diff"),
+                        pl.col("3in4_diff"),
+                        pl.col("4in5_diff"),
+                    ]
+                ),
             )
             .with_columns(
                 fatigue_effect_2=pl.col("2in3_diff").add(pl.col("fatigue_effect_1")),
@@ -483,8 +465,9 @@ class DataConstructor:
             )
         )
 
-    def generate_test_data(self):
-        sample_submission = (
+    def generate_test_data(self, season: int | None = None) -> pl.DataFrame:
+        season = season or current_season()
+        test_df = (
             self.data_loader.load_data(self.data_config.sample_submissions_stage_2)
             .with_columns(
                 id_split=pl.col("ID").str.split("_"),
@@ -496,36 +479,24 @@ class DataConstructor:
                 minutes=pl.lit(40),
                 loc=pl.lit("N"),
                 is_neutral=pl.lit(1),
-                is_team1_home=pl.lit(0),
-                is_team2_home=pl.lit(0),
+                team1_home=pl.lit(0),
+                team2_home=pl.lit(0),
                 is_conf_tourney=pl.lit(0),
                 is_ncaa_tourney=pl.lit(1),
+                is_secondary_tourney=pl.lit(0),
                 team1_loc=pl.lit("N"),
                 team2_loc=pl.lit("N"),
             )
-            .filter(
-                pl.col("team1_id").cast(str).str.starts_with("1" if self.league == "M" else "3")
-            )
+            .filter(pl.col("team1_id").cast(str).str.starts_with("1" if self.league == "M" else "3"))
+            .drop("id_split")
         )
-        rename_dict = {
-            col: col.replace("team1_", "TEMP_")
-            .replace("team2_", "team1_")
-            .replace("TEMP_", "team2_")
-            for col in sample_submission.columns
-            if col.startswith("team1_") or col.startswith("team2_")
-        }
-        test_df = pl.concat(
-            [
-                sample_submission,
-                sample_submission.rename(rename_dict).select(sample_submission.columns),
-            ],
-            how="vertical",
-        ).drop(["Pred", "id_split"])
+
         if self.league == "W":
+            # TODO: fill in null team IDs (result of last four play-in games)
             # In the women's tourney, higher seeds have home court advantage in the first two rounds
             tourney_seeds = (
                 self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
-                .filter(pl.col("Season").eq(current_season()))
+                .filter(pl.col("Season").eq(season))
                 .drop("Season")
             )
             homecourt_df = (
@@ -541,34 +512,34 @@ class DataConstructor:
                     on="WeakSeed",
                 )
             )
-            hca = (
+            hca_df = (
                 pl.concat(
                     [
                         homecourt_df,
                         homecourt_df.with_columns(
                             team2_id=pl.col("team1_id"),
                             team1_id=pl.col("team2_id"),
-                            is_team2_home=pl.col("is_team1_home"),
-                        ).drop("is_team1_home"),
+                            team2_home=pl.col("team1_home"),
+                        ).drop("team1_home"),
                     ],
                     how="diagonal_relaxed",
                 )
                 .with_columns(
-                    pl.col("is_team1_home").fill_null(0),
-                    pl.col("is_team2_home").fill_null(0),
+                    pl.col("team1_home").fill_null(0),
+                    pl.col("team2_home").fill_null(0),
                 )
                 .with_columns(
                     is_neutral=pl.lit(0),
-                    team1_loc=pl.when(pl.col("is_team1_home").eq(1))
-                    .then(pl.lit("H"))
-                    .otherwise(pl.lit("A")),
-                    team2_loc=pl.when(pl.col("is_team2_home").eq(1))
-                    .then(pl.lit("H"))
-                    .otherwise(pl.lit("A")),
+                    team1_loc=pl.when(pl.col("team1_home").eq(1)).then(pl.lit("H")).otherwise(pl.lit("N")),
+                    team2_loc=pl.when(pl.col("team2_home").eq(1)).then(pl.lit("H")).otherwise(pl.lit("N")),
+                )
+                .with_columns(
+                    team1_loc=pl.when(pl.col("team2_loc").eq("H")).then(pl.lit("A")).otherwise(pl.col("team1_loc")),
+                    team2_loc=pl.when(pl.col("team1_loc").eq("H")).then(pl.lit("A")).otherwise(pl.col("team2_loc")),
                 )
             )
             test_df = test_df.update(
-                hca.drop(["Slot", "StrongSeed", "WeakSeed"]),
+                hca_df.drop(["Slot", "StrongSeed", "WeakSeed"]),
                 on=["team1_id", "team2_id"],
                 how="left",
             )
@@ -598,12 +569,8 @@ class DataConstructor:
             )
             .with_columns(pl.col("Seed").str.slice(0, 3))
             .with_columns(
-                Region=pl.col("Seed").str.slice(
-                    0, 1
-                ),  # Extract region from seed (e.g., "W01" -> "W")
-                Seed=pl.col("Seed")
-                .str.slice(1, 3)
-                .cast(int),  # Extract seed number (e.g., "W01" -> 1)
+                Region=pl.col("Seed").str.slice(0, 1),  # Extract region from seed (e.g., "W01" -> "W")
+                Seed=pl.col("Seed").str.slice(1, 3).cast(int),  # Extract seed number (e.g., "W01" -> 1)
             )
         )
         predictions = pl.read_csv(OUTPUT_DIR / f"{self.league}/submission{sfx}.csv")
@@ -663,9 +630,7 @@ class DataConstructor:
 
             # Set Championship matchups
             championship_rounds = (base_df["Region"] != row["Region"]) & (~final_four_rounds)
-            base_rounds.loc[championship_rounds] = (
-                base_rounds.max() + 1
-            )  # only +1 since now this has some Final Four
+            base_rounds.loc[championship_rounds] = base_rounds.max() + 1  # only +1 since now this has some Final Four
             # In standard 64 bracket (no play ins) this should sum to 32 (all teams from other side of bracket)
 
             round_df[row["TeamName"]] = pd.Series(base_rounds.values, index=team_list)
@@ -682,12 +647,9 @@ class DataConstructor:
                 team_round_row = round_df.loc[team_name, :]
                 round_opponents = team_round_row.loc[team_round_row == round_num].index.tolist()
                 advance_pr = (
-                    advance_df.loc[round_opponents, f"R{round_num - 1}"]
-                    * matchup_df.loc[team_name, round_opponents]
+                    advance_df.loc[round_opponents, f"R{round_num - 1}"] * matchup_df.loc[team_name, round_opponents]
                 ).sum()
-                advance_series[team_name] = (
-                    advance_df.loc[team_name, f"R{round_num - 1}"] * advance_pr
-                )
+                advance_series[team_name] = advance_df.loc[team_name, f"R{round_num - 1}"] * advance_pr
             advance_df[f"R{round_num}"] = advance_series
 
         advance_df = advance_df.sort_values("R6", ascending=False)
