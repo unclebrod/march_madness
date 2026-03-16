@@ -13,9 +13,9 @@ from sklearn.preprocessing import StandardScaler
 from march_madness.encoder import LabelEncoder, SequentialEncoder
 from march_madness.loader import DataConfig
 from march_madness.log import logger
-from march_madness.models.base import BaseNumpyroModel
+from march_madness.models.base import NumpyroModel
 from march_madness.settings import OUTPUT_DIR
-from march_madness.trainers.base_trainer import BaseTrainer
+from march_madness.trainer import Trainer
 from march_madness.utils import summarize_samples
 
 CONTEXT_INDICATOR_COLUMNS = [
@@ -61,7 +61,7 @@ class EloInference:
         self.season_team_df.write_csv(OUTPUT_DIR / f"{path}/elo/season_team_coefs.csv")
 
 
-class EloModel(BaseNumpyroModel):
+class EloModel(NumpyroModel):
     name = "elo"
 
     def model(
@@ -104,7 +104,7 @@ class EloModel(BaseNumpyroModel):
         numpyro.sample("team2_win_prob", dist.Bernoulli(logits=-mu), obs=data.team2_win)
 
 
-class EloTrainer(BaseTrainer):
+class EloTrainer(Trainer):
     """Trainer implementation for the Elo model."""
 
     model_cls = EloModel

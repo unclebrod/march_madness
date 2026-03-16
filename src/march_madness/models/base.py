@@ -35,11 +35,11 @@ class McmcParams(BaseModel):
 
 @Parameter(name="*")
 class SviParams(BaseModel):
-    learning_rate: float = 0.01
+    learning_rate: float = 0.05
     num_steps: int = 25_000
 
 
-class BaseNumpyroModel(ABC):
+class NumpyroModel(ABC):
     """Base class for numpyro probabilistic models."""
 
     name: ClassVar[str]

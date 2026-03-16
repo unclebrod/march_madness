@@ -11,7 +11,7 @@ from march_madness.models.elo import EloTrainer
 from march_madness.models.ppp import PointsPerPossessionTrainer
 from march_madness.trainer import Trainer
 
-TRAINER_MAP = {
+TRAINER_MAP: dict[str, type[Trainer]] = {
     "ppp": PointsPerPossessionTrainer,
     "elo": EloTrainer,
 }
@@ -23,37 +23,38 @@ app = App()
 @app.command
 def train(
     league: str = "M",
+    model: str = "ppp",
     inference: str = "svi",
-    num_warmup: int = 1_000,
     num_samples: int = 1_000,
-    num_chains: int = 4,
-    learning_rate: float = 0.01,
-    num_steps: int = 25_000,
+    mcmc_params: McmcParams | None = None,
+    svi_params: SviParams | None = None,
     *,
     save: bool = True,
 ) -> None:
     data_constructor = DataConstructor(league=league)
-    trainer = Trainer(league=league)
+    trainer = TRAINER_MAP[model](league=league)
     box_scores = data_constructor.load_game_team_box_scores()
     trainer.train(
         df=box_scores,
         inference=inference,
-        num_warmup=num_warmup,
         num_samples=num_samples,
-        num_chains=num_chains,
-        num_steps=num_steps,
-        learning_rate=learning_rate,
+        mcmc_params=mcmc_params,
+        svi_params=svi_params,
     )
+    inference = trainer.infer()
+    trainer.predict(df=box_scores)
     if save:
-        trainer.save(path=league)
+        trainer.save()
+    print("ok")
 
 
 @app.command
 def predict(
     league: str = "M",
+    model: str = "ppp",
 ) -> None:
     data_constructor = DataConstructor(league=league)
-    trainer = Trainer.load(league=league)
+    trainer = TRAINER_MAP[model].load(league=league)
     box_scores = data_constructor.load_game_team_box_scores()
     trainer.predict(
         df=box_scores,
@@ -63,10 +64,11 @@ def predict(
 @app.command
 def infer(
     league: str = "M",
+    model: str = "ppp",
     *,
     save: bool = True,
 ) -> None:
-    trainer = Trainer.load(league=league)
+    trainer = TRAINER_MAP[model].load(league=league)
     trainer.infer(
         save=save,
     )
@@ -75,11 +77,12 @@ def infer(
 @app.command
 def submit(
     league: str = "M",
+    model: str = "ppp",
     suffix: str | None = None,
     *,
     save: bool = True,
 ) -> None:
-    trainer = Trainer.load(league=league)
+    trainer = TRAINER_MAP[model].load(league=league)
     trainer.submit(
         save=save,
         suffix=suffix,
@@ -116,33 +119,6 @@ def streamlit() -> None:
 @app.command
 def geocode() -> None:
     geocoding.geocode_cities()
-
-
-# TODO: eventually make this the main method after testing
-@app.command
-def ppp(
-    league: str = "M",
-    model: str = "ppp",
-    inference: str = "svi",
-    num_samples: int = 1_000,
-    mcmc_params: McmcParams | None = None,
-    svi_params: SviParams | None = None,
-    *,
-    save: bool = True,
-) -> None:
-    data_constructor = DataConstructor(league=league)
-    trainer = TRAINER_MAP[model](league=league)
-    box_scores = data_constructor.load_game_team_box_scores()
-    trainer.train(
-        df=box_scores,
-        inference=inference,
-        num_samples=num_samples,
-        mcmc_params=mcmc_params,
-        svi_params=svi_params,
-    )
-    inference = trainer.infer()
-    trainer.predict(df=box_scores)
-    print("ok")
 
 
 if __name__ == "__main__":

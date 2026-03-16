@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import jax.numpy as jnp
 import numpy as np
 import polars as pl
 from pydantic import BaseModel
@@ -175,4 +176,13 @@ def get_win_probs(predictive: dict[str, Any], team_str: str, opp_team_str: str) 
     return pl.DataFrame(
         data=np.array((predictive[f"{team_str}_score"] > predictive[f"{opp_team_str}_score"]).mean(axis=0)),
         schema=[f"{team_str}_win_prob"],
+    )
+
+
+def get_quantiles(arr: jnp.ndarray, col_name: str = "value") -> pl.DataFrame:
+    if np.ndim(arr) == 1:
+        arr = arr.reshape(-1, 1)  # Ensure arr is 2D for quantile calculation
+    return pl.DataFrame(
+        data=np.quantile(arr, q=[0.025, 0.5, 0.975], axis=0),
+        schema=[f"{col_name}_025", f"{col_name}_50", f"{col_name}_975"],
     )

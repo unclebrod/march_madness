@@ -14,9 +14,9 @@ from sklearn.preprocessing import StandardScaler
 from march_madness.encoder import LabelEncoder, SequentialEncoder
 from march_madness.loader import DataConfig
 from march_madness.log import logger
-from march_madness.models.base import BaseNumpyroModel
+from march_madness.models.base import NumpyroModel
 from march_madness.settings import OUTPUT_DIR
-from march_madness.trainers.base_trainer import BaseTrainer
+from march_madness.trainer import Trainer
 from march_madness.utils import summarize_samples
 
 # recency = game_number / max_game_number_per_season_team
@@ -98,7 +98,7 @@ class PointsPerPossessionInference:
         self.game_outputs_df.write_csv(OUTPUT_DIR / f"{path}/ppp/game_outputs.csv")
 
 
-class PointsPerPossessionModel(BaseNumpyroModel):
+class PointsPerPossessionModel(NumpyroModel):
     name = "ppp"
 
     def model(
@@ -116,6 +116,8 @@ class PointsPerPossessionModel(BaseNumpyroModel):
         sigma_defense_team_rate: float = 1.0,
         sigma_pace_team_rate: float = 1.0,
         coach_std: float = 0.01,
+        hca_team_mu_mean: float = 0.02,
+        hca_team_mu_std: float = 0.01,
         hca_team_std: float = 0.02,
         phi_score_rate: float = 0.05,
         **kwargs,
@@ -184,11 +186,11 @@ class PointsPerPossessionModel(BaseNumpyroModel):
         pace_team_delta = pace_team_rw - pace_team_rw.mean(axis=0, keepdims=True)
 
         # ---- Coach effects ----
-        with numpyro.plate("coaches", data.n_coaches):
-            coach = numpyro.sample("coach", dist.Normal(0, coach_std))
+        # with numpyro.plate("coaches", data.n_coaches):
+        #     coach = numpyro.sample("coach", dist.Normal(0, coach_std))
 
         # ---- Home court advantage, per team ----
-        hca_team_mu = numpyro.sample("hca_team_mu", dist.Normal(0.02, 0.01))
+        hca_team_mu = numpyro.sample("hca_team_mu", dist.Normal(hca_team_mu_mean, hca_team_mu_std))
         with numpyro.plate("teams", data.n_teams):
             hca_team = numpyro.sample("hca_team", dist.Normal(hca_team_mu, hca_team_std))
 
@@ -206,23 +208,23 @@ class PointsPerPossessionModel(BaseNumpyroModel):
         team2_pace = pace[data.team2, data.season]
 
         # ---- Coach effects ----
-        team1_coach = coach[data.team1_coach]
-        team2_coach = coach[data.team2_coach]
+        # team1_coach = coach[data.team1_coach]
+        # team2_coach = coach[data.team2_coach]
 
         # ---- Expected points per possession for each team ----
         team1_ppp = softplus(
             team1_offense
             - team2_defense
-            + team1_coach
-            - team2_coach
+            # + team1_coach
+            # - team2_coach
             + fixed_effects_ppp
             + (hca_team[data.team1] * data.team1_home)
         )
         team2_ppp = softplus(
             team2_offense
             - team1_defense
-            + team2_coach
-            - team1_coach
+            # + team2_coach
+            # - team1_coach
             + fixed_effects_ppp
             + (hca_team[data.team2] * data.team2_home)
         )
@@ -250,7 +252,7 @@ class PointsPerPossessionModel(BaseNumpyroModel):
         numpyro.deterministic("team2_win_prob", (team2_score / (team1_score + team2_score)).astype(jnp.float32))
 
 
-class PointsPerPossessionTrainer(BaseTrainer):
+class PointsPerPossessionTrainer(Trainer):
     """Trainer for the Points Per Possession model."""
 
     model_cls = PointsPerPossessionModel
