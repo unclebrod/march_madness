@@ -6,10 +6,12 @@ from dotenv import find_dotenv, load_dotenv
 
 from march_madness import dashboard, geocoding
 from march_madness.loader import DataConstructor
+from march_madness.log import logger
 from march_madness.models.base import McmcParams, SviParams
 from march_madness.models.elo import EloTrainer
 from march_madness.models.ppp import PointsPerPossessionTrainer
 from march_madness.trainer import Trainer
+from march_madness.tuner import Tuner
 
 TRAINER_MAP: dict[str, type[Trainer]] = {
     "ppp": PointsPerPossessionTrainer,
@@ -31,34 +33,21 @@ def train(
     *,
     save: bool = True,
 ) -> None:
+    logger.info(f"Training {model} model for {league} league with {inference} inference.")
     data_constructor = DataConstructor(league=league)
     trainer = TRAINER_MAP[model](league=league)
-    box_scores = data_constructor.load_game_team_box_scores()
+    df = data_constructor.load_game_team_box_scores()
     trainer.train(
-        df=box_scores,
+        df=df,
         inference=inference,
         num_samples=num_samples,
         mcmc_params=mcmc_params,
         svi_params=svi_params,
     )
-    inference = trainer.infer()
-    trainer.predict(df=box_scores)
-    if save:
-        trainer.save()
-    print("ok")
-
-
-@app.command
-def predict(
-    league: str = "M",
-    model: str = "ppp",
-) -> None:
-    data_constructor = DataConstructor(league=league)
-    trainer = TRAINER_MAP[model].load(league=league)
-    box_scores = data_constructor.load_game_team_box_scores()
-    trainer.predict(
-        df=box_scores,
-    )
+    trainer.predict(df=df)  # Generate predictions on training data for evaluation
+    # if save:
+    #     trainer.save(path=league)
+    logger.info("Training complete.")
 
 
 @app.command
@@ -68,25 +57,24 @@ def infer(
     *,
     save: bool = True,
 ) -> None:
-    trainer = TRAINER_MAP[model].load(league=league)
-    trainer.infer(
-        save=save,
-    )
+    logger.info(f"Running inference for {model} model in {league} league.")
+    trainer = TRAINER_MAP[model].load(path=league)
+    trainer.infer(save=save)
+    logger.info("Inference complete.")
 
 
 @app.command
-def submit(
+def tune(
     league: str = "M",
     model: str = "ppp",
-    suffix: str | None = None,
-    *,
-    save: bool = True,
 ) -> None:
-    trainer = TRAINER_MAP[model].load(league=league)
-    trainer.submit(
-        save=save,
-        suffix=suffix,
-    )
+    logger.info(f"Tuning {model} model for {league} league.")
+    data_constructor = DataConstructor(league=league)
+    df = data_constructor.load_game_team_box_scores()
+    trainer_cls = TRAINER_MAP[model]
+    tuner = Tuner(df=df, trainer_cls=trainer_cls, league=league)
+    tuner.tune()
+    logger.info("Tuning complete.")
 
 
 @app.command
@@ -123,6 +111,7 @@ def geocode() -> None:
 
 if __name__ == "__main__":
     load_dotenv(find_dotenv())
+
     numpyro.set_platform("cpu")
     numpyro.set_host_device_count(4)
 

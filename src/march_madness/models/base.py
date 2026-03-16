@@ -31,6 +31,7 @@ class SavePayload(BaseModel):
 class McmcParams(BaseModel):
     num_warmup: int = 1_000
     num_chains: int = 4
+    chain_method: Literal["parallel", "sequential", "vectorized"] = "sequential"
 
 
 @Parameter(name="*")
@@ -61,7 +62,7 @@ class NumpyroModel(ABC):
         self,
         data: Any,
         inference: Literal["mcmc", "svi"] = "svi",
-        num_samples: int = 5_000,
+        num_samples: int = 1_000,
         mcmc_params: McmcParams | None = None,
         svi_params: SviParams | None = None,
         seed: int = 0,
@@ -78,6 +79,7 @@ class NumpyroModel(ABC):
                     num_warmup=mcmc_params.num_warmup,
                     num_samples=num_samples,
                     num_chains=mcmc_params.num_chains,
+                    chain_method=mcmc_params.chain_method,
                 )
                 self.infer.run(rng_key, data)
                 self.infer.print_summary()

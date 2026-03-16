@@ -86,7 +86,7 @@ class PointsPerPossessionInference:
     season_coef_df: pl.DataFrame
     team_coef_df: pl.DataFrame
     season_team_coef_df: pl.DataFrame
-    coach_coef_df: pl.DataFrame
+    # coach_coef_df: pl.DataFrame
     game_outputs_df: pl.DataFrame
 
     def save(self, path: str = "M") -> None:
@@ -94,7 +94,7 @@ class PointsPerPossessionInference:
         self.season_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/season_coefs.csv")
         self.team_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/team_coefs.csv")
         self.season_team_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/season_team_coefs.csv")
-        self.coach_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/coach_coefs.csv")
+        # self.coach_coef_df.write_csv(OUTPUT_DIR / f"{path}/ppp/coach_coefs.csv")
         self.game_outputs_df.write_csv(OUTPUT_DIR / f"{path}/ppp/game_outputs.csv")
 
 
@@ -338,7 +338,7 @@ class PointsPerPossessionTrainer(Trainer):
         season_list: list[pl.DataFrame] = []
         team_list: list[pl.DataFrame] = []
         season_team_list: list[pl.DataFrame] = []
-        coach_list: list[pl.DataFrame] = []
+        # coach_list: list[pl.DataFrame] = []
         game_list: list[pl.DataFrame] = []
 
         season_classes = self.preprocessors["season_encoder"].classes_
@@ -382,13 +382,13 @@ class PointsPerPossessionTrainer(Trainer):
                 season_list.append(df)
                 continue
 
-            if k in ["coach"]:
-                df = pl.DataFrame(summary_dict).with_columns(
-                    name=pl.lit(k),
-                    coach_name=pl.Series(self.preprocessors["coach_encoder"].classes_),
-                )
-                coach_list.append(df)
-                continue
+            # if k in ["coach"]:
+            #     df = pl.DataFrame(summary_dict).with_columns(
+            #         name=pl.lit(k),
+            #         coach_name=pl.Series(self.preprocessors["coach_encoder"].classes_),
+            #     )
+            #     coach_list.append(df)
+            #     continue
 
             if k in ["hca_team"]:
                 df = pl.DataFrame(summary_dict).with_columns(
@@ -432,7 +432,7 @@ class PointsPerPossessionTrainer(Trainer):
             season_team_coef_df=pl.concat(season_team_list, how="vertical_relaxed").join(
                 teams, on="team_id", how="left"
             ),
-            coach_coef_df=pl.concat(coach_list),
+            # coach_coef_df=pl.concat(coach_list),
             game_outputs_df=pl.concat(game_list),
         )
         if save:

@@ -499,21 +499,6 @@ wheels = [
 ]
 
 [[package]]
-name = "jax-metal"
-version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "jax" },
-    { name = "jaxlib" },
-    { name = "six" },
-    { name = "wheel" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/ec/9bb7f7f0ffd06c3fb89813126b2f698636ac7a4263ed7bdd1ff7d7c94f8f/jax_metal-0.1.1-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:d918a78443cb808c9491a24a5c2a94cc4eabfd0461d5bcda29a8f332dfbe9b7e", size = 54662235, upload-time = "2024-10-08T16:57:30.128Z" },
-    { url = "https://files.pythonhosted.org/packages/09/dc/6d8fbfc29d902251cf333414cf7dcfaf4b252a9920c881354584ed36270d/jax_metal-0.1.1-py3-none-macosx_13_0_arm64.whl", hash = "sha256:f1dbfecb298cdd3ba6da3ad6dc9a2adb63d71741f8b8ece28c296b32d608b6c8", size = 41179678, upload-time = "2024-10-08T16:56:31.563Z" },
-]
-
-[[package]]
 name = "jaxlib"
 version = "0.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -695,14 +680,12 @@ source = { editable = "." }
 dependencies = [
     { name = "cyclopts" },
     { name = "dill" },
-    { name = "jax-metal" },
     { name = "jaxlib" },
     { name = "numpyro" },
     { name = "optax" },
     { name = "polars" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "rich" },
     { name = "scikit-learn" },
 ]
 
@@ -726,14 +709,12 @@ viz = [
 requires-dist = [
     { name = "cyclopts", specifier = ">=4.4.4" },
     { name = "dill", specifier = ">=0.3" },
-    { name = "jax-metal", specifier = ">=0.1.1" },
-    { name = "jaxlib", specifier = ">=0.5.0" },
-    { name = "numpyro", specifier = ">=0.17" },
+    { name = "jaxlib", specifier = ">=0.9.0" },
+    { name = "numpyro", specifier = ">=0.20.0" },
     { name = "optax", specifier = ">=0.2" },
     { name = "polars", specifier = ">=1.22" },
     { name = "pydantic", specifier = ">=2.10" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "rich", specifier = ">=13.9" },
     { name = "scikit-learn", specifier = ">=1.6" },
 ]
 
@@ -1939,18 +1920,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/35/a2/8e3becb46433538a38726c948d3399905a4c7cabd0df578ede5dc51f0ec2/wcwidth-0.6.0.tar.gz", hash = "sha256:cdc4e4262d6ef9a1a57e018384cbeb1208d8abbc64176027e2c2455c81313159", size = 159684, upload-time = "2026-02-06T19:19:40.919Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/68/5a/199c59e0a824a3db2b89c5d2dade7ab5f9624dbf6448dc291b46d5ec94d3/wcwidth-0.6.0-py3-none-any.whl", hash = "sha256:1a3a1e510b553315f8e146c54764f4fb6264ffad731b3d78088cdb1478ffbdad", size = 94189, upload-time = "2026-02-06T19:19:39.646Z" },
-]
-
-[[package]]
-name = "wheel"
-version = "0.46.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/89/24/a2eb353a6edac9a0303977c4cb048134959dd2a51b48a269dfc9dde00c8a/wheel-0.46.3.tar.gz", hash = "sha256:e3e79874b07d776c40bd6033f8ddf76a7dad46a7b8aa1b2787a83083519a1803", size = 60605, upload-time = "2026-01-22T12:39:49.136Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/22/b76d483683216dde3d67cba61fb2444be8d5be289bf628c13fc0fd90e5f9/wheel-0.46.3-py3-none-any.whl", hash = "sha256:4b399d56c9d9338230118d705d9737a2a468ccca63d5e813e2a4fc7815d8bc4d", size = 30557, upload-time = "2026-01-22T12:39:48.099Z" },
 ]
 
 [[package]]

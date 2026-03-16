@@ -317,12 +317,14 @@ class DataConstructor:
                     by=["season", "team1_id"],
                     on="day_num",
                     strategy="backward",
+                    check_sortedness=False,
                 )
                 .join_asof(
                     massey_ordinals.rename({x: f"team2_{x}" for x in rank_cols} | {"team_id": "team2_id"}),
                     by=["season", "team2_id"],
                     on="day_num",
                     strategy="backward",
+                    check_sortedness=False,
                 )
                 .sort(["season", "ID", "day_num", "team1_id"])
             )
