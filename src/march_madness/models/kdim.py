@@ -2,12 +2,7 @@
 
 from dataclasses import dataclass
 
-import jax
 import jax.numpy as jnp
-import numpyro
-import numpyro.distributions as dist
-
-from march_madness.models.base_model import BaseNumpyroModel
 
 
 @dataclass

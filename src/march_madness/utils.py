@@ -169,3 +169,10 @@ def generate_ncaaw_homecourt() -> pl.DataFrame:
         schema=["Slot", "StrongSeed", "WeakSeed", "team1_home"],
         orient="row",
     )
+
+
+def get_win_probs(predictive: dict[str, Any], team_str: str, opp_team_str: str) -> pl.DataFrame:
+    return pl.DataFrame(
+        data=np.array((predictive[f"{team_str}_score"] > predictive[f"{opp_team_str}_score"]).mean(axis=0)),
+        schema=[f"{team_str}_win_prob"],
+    )

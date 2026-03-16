@@ -6,10 +6,10 @@ from dotenv import find_dotenv, load_dotenv
 
 from march_madness import dashboard, geocoding
 from march_madness.loader import DataConstructor
-from march_madness.models.base_model import McmcParams, SviParams
+from march_madness.models.base import McmcParams, SviParams
+from march_madness.models.elo import EloTrainer
+from march_madness.models.ppp import PointsPerPossessionTrainer
 from march_madness.trainer import Trainer
-from march_madness.trainers.elo_trainer import EloTrainer
-from march_madness.trainers.ppp_trainer import PointsPerPossessionTrainer
 
 TRAINER_MAP = {
     "ppp": PointsPerPossessionTrainer,

@@ -1,7 +1,7 @@
 """Trainer class for March Madness modeling."""
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import dill as pickle
 import jax.numpy as jnp
@@ -22,13 +22,6 @@ def get_quantiles(arr: jnp.ndarray, col_name: str = "value") -> pl.DataFrame:
     return pl.DataFrame(
         data=np.quantile(arr, q=[0.025, 0.5, 0.975], axis=0),
         schema=[f"{col_name}_025", f"{col_name}_50", f"{col_name}_975"],
-    )
-
-
-def get_win_probs(predictive: dict[str, Any], team_str: str, opp_team_str: str) -> pl.DataFrame:
-    return pl.DataFrame(
-        data=np.array((predictive[f"{team_str}_score"] > predictive[f"{opp_team_str}_score"]).mean(axis=0)),
-        schema=[f"{team_str}_win_prob"],
     )
 
 
