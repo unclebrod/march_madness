@@ -3,14 +3,13 @@
 from pathlib import Path
 from typing import Literal
 
-LEAGUE = Literal["M", "W"]
-
-FINAL_FOUR_REGION_SETTINGS = {"W": "X", "X": "W", "Y": "Z", "Z": "Y"}
-
 ROOT_DIR = Path(__file__).resolve().parents[2]  # go up two levels to march_madness
 DATA_DIR = ROOT_DIR / "data"
 OUTPUT_DIR = ROOT_DIR / "output"
 
+LEAGUE = Literal["M", "W"]
+
+FINAL_FOUR_REGION_SETTINGS = {"W": "X", "X": "W", "Y": "Z", "Z": "Y"}
 WITHIN_REGION_STANDARD_SEED_SETTINGS = {
     16: {
         # 16: 0,  # For play-in games

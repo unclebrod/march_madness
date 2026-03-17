@@ -65,6 +65,9 @@ class Tuner:
             team2_score_pred: list[float] = []
 
             for train_df, test_df in self.generate_train_val_data(**kwargs):
+                if train_df.is_empty() or test_df.is_empty():
+                    logger.info("Empty train or test dataframe, skipping this fold.")
+                    continue
                 trainer = self.trainer_cls(league=self.league)
                 trainer.train(
                     df=train_df,

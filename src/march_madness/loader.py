@@ -695,4 +695,4 @@ class DataConstructor:
             advance_df[f"R{round_num}"] = advance_series
 
         advance_df = advance_df.sort_values("R6", ascending=False)
-        advance_df.to_csv(OUTPUT_DIR / f"{self.league}/advance.csv")
+        advance_df.to_csv(OUTPUT_DIR / f"{self.league}/advance_{self.league}_{season}.csv")
