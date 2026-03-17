@@ -150,18 +150,27 @@ def generate_ncaaw_homecourt() -> pl.DataFrame:
             matchups.append([slot, team_a, team_b, has_home_court])
             first_round_winners[region].append((team_a, team_b))  # Save for R2
 
+    # Mapping from R2 slot -> host seed
+    # (1v16 vs 8v9 hosted by 1, etc.)
+    r2_host_seeds = [1, 2, 3, 4]
+
     # Second round matchups (explicitly listing all combinations)
     for region in regions:
         for i in range(4):  # Each R2 slot is winner of (1 vs 16) vs winner of (8 vs 9), etc.
             slot = f"R2{region}{i + 1}"
+
             team_a_options = first_round_winners[region][i]  # Winner of high-seed game
             team_b_options = first_round_winners[region][8 - i - 1]  # Winner of low-seed game
 
+            host_seed = r2_host_seeds[i]
+
             for team_a in team_a_options:
                 for team_b in team_b_options:
-                    # Home court logic: Only retains home advantage if original top 4 seed wins
-                    orig_host_seed = int(team_a[1:])  # Extract seed from "W01"
-                    has_home_court = int(orig_host_seed <= 4)  # Home if original host won
+                    seed_a = int(team_a[1:])
+                    seed_b = int(team_b[1:])
+
+                    # Home court only exists if the host seed survives
+                    has_home_court = int(host_seed in {seed_a, seed_b})
 
                     matchups.append([slot, team_a, team_b, has_home_court])
 

@@ -69,6 +69,7 @@ class EloModel(NumpyroModel):
         data: EloData,
         beta_std: float = 0.05,
         sigma_rating_rate: float = 1.0,
+        *,
         predict: bool = False,
         **kwargs,
     ) -> None:

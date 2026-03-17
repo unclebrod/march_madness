@@ -1,6 +1,7 @@
 """Main entry point for March Madness modeling and analysis."""
 
 import numpyro
+import polars as pl
 from cyclopts import App
 from dotenv import find_dotenv, load_dotenv
 
@@ -10,6 +11,7 @@ from march_madness.log import logger
 from march_madness.models.base import McmcParams, SviParams
 from march_madness.models.elo import EloTrainer
 from march_madness.models.ppp import PointsPerPossessionTrainer
+from march_madness.settings import OUTPUT_DIR
 from march_madness.trainer import Trainer
 from march_madness.tuner import Tuner
 
@@ -27,7 +29,7 @@ def train(
     league: str = "M",
     model: str = "ppp",
     inference: str = "svi",
-    num_samples: int = 1_000,
+    num_samples: int = 2_000,
     mcmc_params: McmcParams | None = None,
     svi_params: SviParams | None = None,
     *,
@@ -44,9 +46,9 @@ def train(
         mcmc_params=mcmc_params,
         svi_params=svi_params,
     )
-    trainer.predict(df=df)  # Generate predictions on training data for evaluation
-    # if save:
-    #     trainer.save(path=league)
+    # preds = trainer.predict(df=df)  # Generate predictions on training data for evaluation
+    if save:
+        trainer.save(path=league)
     logger.info("Training complete.")
 
 
@@ -67,36 +69,58 @@ def infer(
 def tune(
     league: str = "M",
     model: str = "ppp",
+    inference: str = "svi",
+    num_samples: int = 1_000,
+    mcmc_params: McmcParams | None = None,
+    svi_params: SviParams | None = None,
+    n_trials: int = 50,
 ) -> None:
     logger.info(f"Tuning {model} model for {league} league.")
     data_constructor = DataConstructor(league=league)
     df = data_constructor.load_game_team_box_scores()
     trainer_cls = TRAINER_MAP[model]
-    tuner = Tuner(df=df, trainer_cls=trainer_cls, league=league)
-    tuner.tune()
+    tuner = Tuner(
+        df=df,
+        trainer_cls=trainer_cls,
+        league=league,
+    )
+    tuner.tune(
+        inference=inference,
+        num_samples=num_samples,
+        n_trials=n_trials,
+        mcmc_params=mcmc_params,
+        svi_params=svi_params,
+    )
     logger.info("Tuning complete.")
 
 
 @app.command
-def final(
-    suffix: str | None = None,
+def submit(
+    season: int,
+    model: str = "ppp",
 ) -> None:
-    data_constructor = DataConstructor(league="M")
-    data_constructor.get_final_submission(suffix=suffix)
+    df_list: list[pl.DataFrame] = []
+    for league in ["M", "W"]:
+        data_constructor = DataConstructor(league=league)
+        df = data_constructor.load_test_data(season=season)
+        trainer = TRAINER_MAP[model].load(path=league)
+        preds = trainer.predict(df=df)
+        df_list.append(preds)
+    pl.concat(df_list, how="vertical_relaxed").select(
+        pl.col("ID"),
+        pl.col("team1_win_prob").alias("Pred"),
+    ).write_csv(OUTPUT_DIR / "final_submission.csv")
 
 
 @app.command
 def bracket(
+    season: int | None = None,
     league: str = "M",
-    suffix: str | None = None,
     *,
     save: bool = True,
 ) -> None:
     data_constructor = DataConstructor(league=league)
-    data_constructor.generate_bracket(
-        suffix=suffix,
-        save=save,
-    )
+    data_constructor.generate_bracket(season=season, save=save)
 
 
 @app.command

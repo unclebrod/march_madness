@@ -26,6 +26,8 @@ class Trainer(ABC):
         self.league = league
         self.preprocessors = preprocessors or {}
         self.data_loader = DataLoader(league=league)
+        self.train_df = None
+        self.predict_df = None
 
     @abstractmethod
     def train(self, df: pl.DataFrame, **kwargs) -> None:

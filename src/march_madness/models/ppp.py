@@ -19,21 +19,6 @@ from march_madness.settings import OUTPUT_DIR
 from march_madness.trainer import Trainer
 from march_madness.utils import summarize_samples
 
-# recency = game_number / max_game_number_per_season_team
-# weights = jnp.exp(k * recency)
-
-# linear
-# weights = 1.0 + alpha * recency
-
-# numpyro.factor(name, log_weight) adds an arbitrary log-density term to the joint log-probability:
-# with numpyro.plate("obs", N):
-#     mu = (
-#         offense[season_id, team_id]
-#         - defense[season_id, opp_id]
-#     )
-
-#     logp = dist.Normal(mu, sigma).log_prob(y)
-#     numpyro.factor("recency_weighted_ll", weights * logp)
 CONTEXT_INDICATOR_COLUMNS = [
     "is_ncaa_tourney",
     "is_conf_tourney",
@@ -59,17 +44,17 @@ CONTEXT_NUMERIC_COLUMNS = [
 
 @dataclass
 class PointsPerPossessionData:
-    context: jnp.array  # fixed effects (tournament, travel, rest, elevation, etc.)
+    context: jnp.ndarray  # fixed effects (tournament, travel, rest, elevation, etc.)
 
     n_teams: int | None  # number of unique teams
     n_seasons: int | None  # number of unique seasons
-    n_coaches: int | None  # number of unique coaches
+    # n_coaches: int | None  # number of unique coaches
 
     season: jnp.ndarray  # season encoding
     team1: jnp.ndarray  # team1 encoding
     team2: jnp.ndarray  # team2 encoding
-    team1_coach: jnp.ndarray  # team1 coach encoding
-    team2_coach: jnp.ndarray  # team2 coach encoding
+    # team1_coach: jnp.ndarray  # team1 coach encoding
+    # team2_coach: jnp.ndarray  # team2 coach encoding
 
     minutes: jnp.ndarray  # game minutes
     team1_home: jnp.ndarray  # is team1 the home team
@@ -78,6 +63,8 @@ class PointsPerPossessionData:
     avg_poss: jnp.ndarray | None  # average possessions of the game
     team1_score: jnp.ndarray | None  # team1's score
     team2_score: jnp.ndarray | None  # team2's score
+
+    recency_weight: jnp.ndarray | None = None  # optional weight for each game based on within-season recency
 
 
 @dataclass
@@ -104,6 +91,7 @@ class PointsPerPossessionModel(NumpyroModel):
     def model(
         self,
         data: PointsPerPossessionData,
+        alpha: float = 1.0,
         beta_ppp_std: float = 0.05,
         beta_pace_std: float = 0.05,
         offense_global_mean_std: float = 0.3,
@@ -115,16 +103,16 @@ class PointsPerPossessionModel(NumpyroModel):
         sigma_offense_team_rate: float = 1.0,
         sigma_defense_team_rate: float = 1.0,
         sigma_pace_team_rate: float = 1.0,
-        coach_std: float = 0.01,
+        # coach_std: float = 0.01,
         hca_team_mu_mean: float = 0.02,
         hca_team_mu_std: float = 0.01,
         hca_team_std: float = 0.02,
         phi_score_rate: float = 0.05,
         **kwargs,
     ) -> None:
-        # TODO: consider adding weighting so end of season games are more important
-        # TODO: latent factor analysis?
+
         # ---- Fixed effects matrices ----
+        n_games = data.context.shape[0]
         n_context = data.context.shape[1]
 
         beta_ppp = numpyro.sample("beta_ppp", dist.Normal(0, beta_ppp_std).expand((n_context,)))
@@ -132,6 +120,12 @@ class PointsPerPossessionModel(NumpyroModel):
 
         fixed_effects_ppp = jnp.dot(data.context, beta_ppp)
         fixed_effects_pace = jnp.dot(data.context, beta_pace)
+
+        # ---- Recency weighting ----
+        if data.recency_weight is not None:
+            scale = jnp.exp(alpha * data.recency_weight)
+        else:
+            scale = jnp.ones(n_games)
 
         # ---- Global means & standard deviations for each offense, defense, and pace ----
         offense_global_mean = numpyro.sample("offense_global_mean", dist.Normal(0, offense_global_mean_std))
@@ -238,9 +232,11 @@ class PointsPerPossessionModel(NumpyroModel):
         # ---- Likelihood functions for possessions and scores ----
         phi_score = numpyro.sample("phi_score", dist.Exponential(phi_score_rate))
 
-        numpyro.sample("possessions", dist.Poisson(possessions), obs=data.avg_poss)
-        numpyro.sample("team1_score", dist.NegativeBinomial2(team1_score, phi_score), obs=data.team1_score)
-        numpyro.sample("team2_score", dist.NegativeBinomial2(team2_score, phi_score), obs=data.team2_score)
+        with numpyro.plate("games", size=n_games):
+            with numpyro.handlers.scale(scale=scale):
+                numpyro.sample("possessions", dist.Poisson(possessions), obs=data.avg_poss)
+                numpyro.sample("team1_score", dist.NegativeBinomial2(team1_score, phi_score), obs=data.team1_score)
+                numpyro.sample("team2_score", dist.NegativeBinomial2(team2_score, phi_score), obs=data.team2_score)
 
         # ---- Deterministic outputs for inference ----
         numpyro.deterministic("team1_ppp", team1_ppp)
@@ -248,8 +244,6 @@ class PointsPerPossessionModel(NumpyroModel):
         numpyro.deterministic("pace", pace)
         numpyro.deterministic("spread", team2_score - team1_score)
         numpyro.deterministic("total", team1_score + team2_score)
-        numpyro.deterministic("team1_win_prob", (team1_score / (team1_score + team2_score)).astype(jnp.float32))
-        numpyro.deterministic("team2_win_prob", (team2_score / (team1_score + team2_score)).astype(jnp.float32))
 
 
 class PointsPerPossessionTrainer(Trainer):
@@ -269,38 +263,64 @@ class PointsPerPossessionTrainer(Trainer):
         super().__init__(preprocessors=preprocessors, **kwargs)
 
     def _filter_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
-        filtered_df = df.filter(
-            pl.col("team1_score").is_not_null(),
-            pl.col("team2_score").is_not_null(),
-            pl.col("avg_poss").is_not_null(),
-            pl.col("season").is_not_null(),
-            pl.col("team1_id").is_not_null(),
-            pl.col("team2_id").is_not_null(),
-        )
+        filter_columns = [
+            "team1_score",
+            "team2_score",
+            "avg_poss",
+            "season",
+            "team1_id",
+            "team2_id",
+        ]
+        filtered_df = df.filter(*[pl.col(col).is_not_null() for col in filter_columns if col in df.columns])
         logger.info(
             f"Removed {len(df) - len(filtered_df)} rows with missing values ({len(filtered_df) / len(df):.2%})."
         )
         return filtered_df
 
     def train(self, df: pl.DataFrame, **kwargs) -> None:
-        train_df = self._filter_dataframe(df)
+        self.train_df = self._filter_dataframe(df)
 
-        context_num = train_df.select(CONTEXT_NUMERIC_COLUMNS).to_numpy()
+        context_num = self.train_df.select(CONTEXT_NUMERIC_COLUMNS).to_numpy()
         context_num_imputed = self.preprocessors["imputer"].fit_transform(context_num)
 
         self.preprocessors["scaler"].fit(context_num_imputed)
-        self.preprocessors["season_encoder"].fit(train_df["season"])
-        self.preprocessors["team_encoder"].fit(train_df.select(["team1_id", "team2_id"]))
-        self.preprocessors["coach_encoder"].fit(train_df.select(["team1_coach", "team2_coach"]))
+        self.preprocessors["season_encoder"].fit(self.train_df["season"])
+        self.preprocessors["team_encoder"].fit(self.train_df.select(["team1_id", "team2_id"]))
+        # self.preprocessors["coach_encoder"].fit(self.train_df.select(["team1_coach", "team2_coach"]))
 
-        data = self.generate_data(train_df, predict=False)
+        data = self.generate_data(self.train_df, predict=False)
         self.model.fit(data=data, **kwargs)
 
     def predict(self, df: pl.DataFrame, **kwargs) -> pl.DataFrame:
-        predict_df = self._filter_dataframe(df)
-        data = self.generate_data(predict_df, predict=True)
+        self.predict_df = self._filter_dataframe(df)
+        data = self.generate_data(self.predict_df, predict=True)
         samples = self.model.predict(data=data, **kwargs)
-        print("ok")
+        select_columns = [
+            "ID",
+            "season",
+            "team1_id",
+            "team1_name",
+            "team2_id",
+            "team2_name",
+        ]
+        team1_score = samples["team1_score"]
+        team2_score = samples["team2_score"]
+        team1_win_prob = (team1_score > team2_score).mean(axis=0)
+        team2_win_prob = (team2_score > team1_score).mean(axis=0)
+        team1_win_prob_adj = team1_win_prob / (team1_win_prob + team2_win_prob)
+        team2_win_prob_adj = team2_win_prob / (team1_win_prob + team2_win_prob)
+        return self.predict_df.select(*[x for x in select_columns if x in self.predict_df.columns]).with_columns(
+            team1_win_prob=pl.Series(team1_win_prob_adj.tolist()),
+            team2_win_prob=pl.Series(team2_win_prob_adj.tolist()),
+            team1_score=pl.Series(team1_score.mean(axis=0).tolist()),
+            team2_score=pl.Series(team2_score.mean(axis=0).tolist()),
+            team1_ppp=pl.Series(samples["team1_ppp"].mean(axis=0).tolist()),
+            team2_ppp=pl.Series(samples["team2_ppp"].mean(axis=0).tolist()),
+            pace=pl.Series(samples["pace"].mean(axis=0).tolist()),
+            possessions=pl.Series(samples["possessions"].mean(axis=0).tolist()),
+            spread=pl.Series(samples["spread"].mean(axis=0).tolist()),
+            total=pl.Series(samples["total"].mean(axis=0).tolist()),
+        )
 
     def generate_data(
         self,
@@ -309,6 +329,7 @@ class PointsPerPossessionTrainer(Trainer):
         predict: bool = False,
         **kwargs,
     ) -> PointsPerPossessionData:
+
         context_num = self.preprocessors["imputer"].transform(df.select(CONTEXT_NUMERIC_COLUMNS).to_numpy())
         context_num = self.preprocessors["scaler"].transform(context_num)
         context_ind = jnp.asarray(df.select(CONTEXT_INDICATOR_COLUMNS).to_numpy())
@@ -318,18 +339,19 @@ class PointsPerPossessionTrainer(Trainer):
             context=context,
             n_teams=len(self.preprocessors["team_encoder"].classes_),
             n_seasons=len(self.preprocessors["season_encoder"].classes_),
-            n_coaches=len(self.preprocessors["coach_encoder"].classes_),
+            # n_coaches=len(self.preprocessors["coach_encoder"].classes_),
             season=self.preprocessors["season_encoder"].transform(df["season"]),
             team1=self.preprocessors["team_encoder"].transform(df["team1_id"]),
             team2=self.preprocessors["team_encoder"].transform(df["team2_id"]),
-            team1_coach=self.preprocessors["coach_encoder"].transform(df["team1_coach"]),
-            team2_coach=self.preprocessors["coach_encoder"].transform(df["team2_coach"]),
+            # team1_coach=self.preprocessors["coach_encoder"].transform(df["team1_coach"]),
+            # team2_coach=self.preprocessors["coach_encoder"].transform(df["team2_coach"]),
             minutes=df["minutes"].to_jax(),
             team1_home=df["team1_home"].to_jax(),
             team2_home=df["team2_home"].to_jax(),
             avg_poss=df["avg_poss"].to_jax() if not predict else None,
             team1_score=df["team1_score"].to_jax() if not predict else None,
             team2_score=df["team2_score"].to_jax() if not predict else None,
+            recency_weight=df["recency_weight"].to_jax() if not predict else None,
         )
 
     def infer(self, *, save: bool = True, **kwargs) -> PointsPerPossessionInference:

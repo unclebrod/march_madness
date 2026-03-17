@@ -62,7 +62,7 @@ class NumpyroModel(ABC):
         self,
         data: Any,
         inference: Literal["mcmc", "svi"] = "svi",
-        num_samples: int = 1_000,
+        num_samples: int = 2_000,
         mcmc_params: McmcParams | None = None,
         svi_params: SviParams | None = None,
         seed: int = 0,

@@ -21,9 +21,11 @@ from march_madness.utils import (
     haversine,
 )
 
-pd.set_option("future.no_silent_downcasting", True)
+pd.set_option("future.no_silent_downcasting", True)  # noqa
 
 T = TypeVar("T", bound=BaseModel)
+
+RECENCY_PADDING = 40
 
 
 def _poss_expr(team_str: str, multiplier: float = 0.475) -> pl.Expr:
@@ -188,7 +190,9 @@ class DataConstructor:
                         "TeamName": "team1_name",
                         "FirstD1Season": "team1_first_d1_season",
                         "LastD1Season": "team1_last_d1_season",
-                    }
+                    },
+                    # Women's doesn't have first/last D1 season data
+                    strict=False,
                 ),
                 how="left",
                 on=["WTeamID"],
@@ -200,7 +204,9 @@ class DataConstructor:
                         "TeamName": "team2_name",
                         "FirstD1Season": "team2_first_d1_season",
                         "LastD1Season": "team2_last_d1_season",
-                    }
+                    },
+                    # Women's doesn't have first/last D1 season data
+                    strict=False,
                 ),
                 how="left",
                 on=["LTeamID"],
@@ -247,6 +253,9 @@ class DataConstructor:
                     pl.col("days_into_season").max().over("season")
                 ),
                 days_into_season_sq=pl.col("days_into_season").pow(2),
+                recency_weight=pl.col("days_into_season")
+                .add(pl.lit(RECENCY_PADDING))
+                .truediv(pl.col("days_into_season").add(pl.lit(RECENCY_PADDING)).max().over("season")),
                 date=pl.col("day_zero").add(pl.duration(days=pl.col("day_num"))),
                 minutes=pl.lit(40).add(pl.col("num_ot").mul(pl.lit(5))),
                 spread=pl.col("team1_score").sub(pl.col("team2_score")),
@@ -467,8 +476,9 @@ class DataConstructor:
             )
         )
 
-    def generate_test_data(self, season: int | None = None) -> pl.DataFrame:
+    def load_test_data(self, season: int | None = None) -> pl.DataFrame:
         season = season or current_season()
+        teams = self.data_loader.load_data(self.data_config.teams)
         test_df = (
             self.data_loader.load_data(self.data_config.sample_submissions_stage_2)
             .with_columns(
@@ -488,8 +498,32 @@ class DataConstructor:
                 is_secondary_tourney=pl.lit(0),
                 team1_loc=pl.lit("N"),
                 team2_loc=pl.lit("N"),
+                team1_b2b=pl.lit(0),
+                team1_2in3=pl.lit(0),
+                team1_3in4=pl.lit(0),
+                team1_4in5=pl.lit(0),
+                team2_b2b=pl.lit(0),
+                team2_2in3=pl.lit(0),
+                team2_3in4=pl.lit(0),
+                team2_4in5=pl.lit(0),
+                days_into_season_norm=pl.lit(1),
+                days_into_season_norm_sq=pl.lit(1),
+                team1_log_travel_distance_diff=pl.lit(0),
+                team1_log_elevation_diff=pl.lit(0),
+                team2_log_travel_distance_diff=pl.lit(0),
+                team2_log_elevation_diff=pl.lit(0),
             )
             .filter(pl.col("team1_id").cast(str).str.starts_with("1" if self.league == "M" else "3"))
+            .join(
+                teams.rename({"TeamID": "team1_id", "TeamName": "team1_name"}),
+                how="left",
+                on=["team1_id"],
+            )
+            .join(
+                teams.rename({"TeamID": "team2_id", "TeamName": "team2_name"}),
+                how="left",
+                on=["team2_id"],
+            )
             .drop("id_split")
         )
 
@@ -547,19 +581,9 @@ class DataConstructor:
             )
         return test_df
 
-    def get_final_submission(self, suffix: str | None = None) -> pl.DataFrame:
-        sfx = f"_{suffix}" if suffix else ""
-        df_list = []
-        for league in ["M", "W"]:
-            submission = pl.read_csv(OUTPUT_DIR / f"{league}/submission{sfx}.csv")
-            df_list.append(submission)
-        final_submission = pl.concat(df_list, how="vertical")
-        final_submission.write_csv(OUTPUT_DIR / f"final_submission{sfx}.csv")
-
-    def generate_bracket(self, suffix: str | None = None, *, save: bool = True) -> pl.DataFrame:
+    def generate_bracket(self, season: int | None = None, *, save: bool = True) -> None:
         """Generate a bracket for the NCAA tournament."""
-        sfx = f"_{suffix}" if suffix else ""
-        # tourney_slots = self.data_loader.load_data(self.data_config.ncaa_tourney_slots).filter(pl.col("Season").eq(2025), pl.col(""))
+        season = season or current_season()
         teams = self.data_loader.load_data(self.data_config.teams)
         tourney_seeds = (
             self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
@@ -575,13 +599,29 @@ class DataConstructor:
                 Seed=pl.col("Seed").str.slice(1, 3).cast(int),  # Extract seed number (e.g., "W01" -> 1)
             )
         )
-        predictions = pl.read_csv(OUTPUT_DIR / f"{self.league}/submission{sfx}.csv")
+        predictions = pl.read_csv(OUTPUT_DIR / "final_submission.csv")
         if self.league == "M":
-            # losers - Mt. Saint Mary's (1110), Texas (1400), San Diego St (1361), St. Francis (1384)
-            exclude = [1110, 1400, 1361, 1384]
+            exclude = [
+                1420,  # UMBC
+                # 1224,  # Howard
+                1400,  # Texas
+                # 1301,  # NC State
+                1341,  # Prairie View A&M
+                # 1250,  # Lehigh
+                1275,  # Miami (OH)
+                # 1374,  # SMU
+            ]
         else:
-            # losers - Princeton (3343), UC San Diego (3471) [gonna assume William & Mary (3456) and Washington (3449)]
-            exclude = [3343, 3471, 3456, 3449]
+            exclude = [
+                3283,  # Missouri State
+                # 3372,  # Stephen F. Austin
+                3304,  # Nebraska
+                # 3350,  # Richmond
+                3380,  # Southern U.
+                # 3359,  # Samford
+                3438,  # Virginia
+                # 3113,  # Arizona State
+            ]
         tourney_seeds = tourney_seeds.filter(~pl.col("TeamID").is_in(exclude))
         team_list = tourney_seeds["TeamName"].to_list()
         team_id_list = tourney_seeds["TeamID"].to_list()
@@ -591,11 +631,11 @@ class DataConstructor:
             team_id = team_map[team]
             opp_team_id = team_map[opp_team]
             if team_id < opp_team_id:
-                game_id = f"2025_{team_id}_{opp_team_id}"
+                game_id = f"{season}_{team_id}_{opp_team_id}"
                 # lower id means we take prediction directly
                 win_prob = predictions.filter(pl.col("ID").eq(game_id))["Pred"].item()
             else:
-                game_id = f"2025_{opp_team_id}_{team_id}"
+                game_id = f"{season}_{opp_team_id}_{team_id}"
                 # higher id means we take 1 - prediction
                 win_prob = 1 - predictions.filter(pl.col("ID").eq(game_id))["Pred"].item()
             return win_prob
@@ -655,4 +695,4 @@ class DataConstructor:
             advance_df[f"R{round_num}"] = advance_series
 
         advance_df = advance_df.sort_values("R6", ascending=False)
-        advance_df.to_csv(OUTPUT_DIR / f"{self.league}/advance{sfx}.csv")
+        advance_df.to_csv(OUTPUT_DIR / f"{self.league}/advance.csv")
