@@ -581,7 +581,7 @@ class DataConstructor:
             )
         return test_df
 
-    def generate_bracket(self, season: int | None = None, *, save: bool = True) -> None:
+    def create_bracket(self, season: int | None = None, *, save: bool = True) -> None:
         """Generate a bracket for the NCAA tournament."""
         season = season or current_season()
         teams = self.data_loader.load_data(self.data_config.teams)
@@ -696,3 +696,72 @@ class DataConstructor:
 
         advance_df = advance_df.sort_values("R6", ascending=False)
         advance_df.to_csv(OUTPUT_DIR / f"{self.league}/advance_{self.league}_{season}.csv")
+
+    def analysis(self) -> None:
+        tourney_slots = self.data_loader.load_data(self.data_config.ncaa_tourney_slots)
+        tourney_seeds = self.data_loader.load_data(self.data_config.ncaa_tourney_seeds)
+        results = self.data_loader.load_data(self.data_config.ncaa_tourney_compact_results).drop(
+            "DayNum", "WLoc", "NumOT"
+        )
+        teams = self.data_loader.load_data(self.data_config.teams).drop("FirstD1Season", "LastD1Season")
+
+        df = (
+            tourney_slots.join(
+                tourney_seeds.rename({"Seed": "StrongSeed", "TeamID": "StrongTeamID"}),
+                on=["Season", "StrongSeed"],
+                how="left",
+            )
+            .join(
+                tourney_seeds.rename({"Seed": "WeakSeed", "TeamID": "WeakTeamID"}),
+                on=["Season", "WeakSeed"],
+                how="left",
+            )
+            .join(
+                teams.rename({"TeamID": "StrongTeamID", "TeamName": "StrongTeamName"}),
+                on=["StrongTeamID"],
+                how="left",
+            )
+            .join(
+                teams.rename({"TeamID": "WeakTeamID", "TeamName": "WeakTeamName"}),
+                on=["WeakTeamID"],
+                how="left",
+            )
+            .join(
+                results.rename(
+                    {"WTeamID": "StrongTeamID", "LTeamID": "WeakTeamID", "WScore": "StrongScore", "LScore": "WeakScore"}
+                ),
+                on=["Season", "StrongTeamID", "WeakTeamID"],
+                how="left",
+            )
+            .update(
+                results.rename(
+                    {"WTeamID": "WeakTeamID", "LTeamID": "StrongTeamID", "WScore": "WeakScore", "LScore": "StrongScore"}
+                ),
+                on=["Season", "StrongTeamID", "WeakTeamID"],
+                how="left",
+            )
+            .filter(
+                pl.col("StrongTeamID").is_not_null(),
+                pl.col("WeakTeamID").is_not_null(),
+            )
+            .with_columns(
+                spread=pl.col("StrongScore").sub(pl.col("WeakScore")),
+                strong_win=pl.col("StrongScore").gt(pl.col("WeakScore")),
+                weak_win=pl.col("WeakScore").gt(pl.col("StrongScore")),
+                matchup=pl.format("{} vs {}", pl.col("StrongSeed").str.slice(1, 2), pl.col("WeakSeed").str.slice(1, 2)),
+            )
+        )
+        group_df = (
+            df.group_by("matchup")
+            .agg(
+                total_games=pl.count(),
+                strong_wins=pl.col("strong_win").sum(),
+                weak_wins=pl.col("weak_win").sum(),
+                avg_spread=pl.col("spread").mean(),
+            )
+            .with_columns(
+                strong_win_pct=pl.col("strong_wins").truediv(pl.col("total_games")),
+                weak_win_pct=pl.col("weak_wins").truediv(pl.col("total_games")),
+            )
+            .sort("matchup")
+        )

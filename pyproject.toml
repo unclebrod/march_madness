@@ -9,13 +9,13 @@ requires-python = ">=3.12"
 license = {text = "MIT"}
 dynamic = ["version"]
 dependencies = [
-    "cyclopts>=4.4.4",
+    "cyclopts>=4.4",
     "dill>=0.3",
     "jaxlib>=0.9.0",
     "numpyro>=0.20.0",
     "optax>=0.2",
     "optuna>=4.8.0",
-    "optuna-dashboard>=0.20.0",
+    "optuna-dashboard>=0.20",
     "polars>=1.22",
     "pydantic>=2.10",
     "python-dotenv>=1.0",
@@ -35,6 +35,7 @@ viz = [
     "watchdog>=6.0",
 ]
 debug = [
+    "ipykernel>=7.2",
     "ipython>=8.32",
 ]
 

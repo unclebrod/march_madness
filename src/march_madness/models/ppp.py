@@ -17,7 +17,7 @@ from march_madness.log import logger
 from march_madness.models.base import NumpyroModel
 from march_madness.settings import OUTPUT_DIR
 from march_madness.trainer import Trainer
-from march_madness.utils import summarize_samples
+from march_madness.utils import load_best_params, summarize_samples
 
 CONTEXT_INDICATOR_COLUMNS = [
     "is_ncaa_tourney",
@@ -91,7 +91,7 @@ class PointsPerPossessionModel(NumpyroModel):
     def model(
         self,
         data: PointsPerPossessionData,
-        alpha: float = 1.0,
+        alpha: float = 1.0,  # recency weighting parameter, where higher values correspond to more weight on recent games
         beta_ppp_std: float = 0.05,
         beta_pace_std: float = 0.05,
         offense_global_mean_std: float = 0.3,
@@ -277,7 +277,7 @@ class PointsPerPossessionTrainer(Trainer):
         )
         return filtered_df
 
-    def train(self, df: pl.DataFrame, **kwargs) -> None:
+    def train(self, df: pl.DataFrame, *, use_best_params: bool = True, **kwargs) -> None:
         self.train_df = self._filter_dataframe(df)
 
         context_num = self.train_df.select(CONTEXT_NUMERIC_COLUMNS).to_numpy()
@@ -289,6 +289,13 @@ class PointsPerPossessionTrainer(Trainer):
         # self.preprocessors["coach_encoder"].fit(self.train_df.select(["team1_coach", "team2_coach"]))
 
         data = self.generate_data(self.train_df, predict=False)
+
+        if use_best_params:
+            # TODO: just tuned for men given time constrain - generalize later
+            best_params = load_best_params(league="M", model="ppp")
+            logger.debug(f"Using best params from tuning: \n{best_params}")
+            kwargs.update(best_params)
+
         self.model.fit(data=data, **kwargs)
 
     def predict(self, df: pl.DataFrame, **kwargs) -> pl.DataFrame:

@@ -1,6 +1,8 @@
 """Module utilities."""
 
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -8,6 +10,8 @@ import jax.numpy as jnp
 import numpy as np
 import polars as pl
 from pydantic import BaseModel
+
+from march_madness.settings import OUTPUT_DIR
 
 EARTH_RADIUS_MILES = 3959.0
 
@@ -195,3 +199,8 @@ def get_quantiles(arr: jnp.ndarray, col_name: str = "value") -> pl.DataFrame:
         data=np.quantile(arr, q=[0.025, 0.5, 0.975], axis=0),
         schema=[f"{col_name}_025", f"{col_name}_50", f"{col_name}_975"],
     )
+
+
+def load_best_params(league: str, model: str) -> dict:
+    with Path(OUTPUT_DIR / f"{league}/{model}/best_params.json").open("r") as f:
+        return json.load(f)

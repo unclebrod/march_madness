@@ -98,7 +98,10 @@ def tune(
 def submit(
     season: int,
     model: str = "ppp",
+    suffix: str = "",
 ) -> None:
+    logger.info(f"Generating submission for {model} model for season {season}.")
+    sfx = f"_{suffix}" if suffix else ""
     df_list: list[pl.DataFrame] = []
     for league in ["M", "W"]:
         data_constructor = DataConstructor(league=league)
@@ -106,10 +109,16 @@ def submit(
         trainer = TRAINER_MAP[model].load(path=league)
         preds = trainer.predict(df=df)
         df_list.append(preds)
-    pl.concat(df_list, how="vertical_relaxed").select(
+    submission = pl.concat(df_list, how="vertical_relaxed")
+    submission.select(
         pl.col("ID"),
         pl.col("team1_win_prob").alias("Pred"),
-    ).write_csv(OUTPUT_DIR / "final_submission.csv")
+    ).write_csv(OUTPUT_DIR / f"final_submission{sfx}.csv")
+    submission.select(
+        pl.col("ID"),
+        (pl.col("spread") * -1).alias("Pred"),
+    ).write_csv(OUTPUT_DIR / f"final_submission_spread{sfx}.csv")
+    logger.info("Submission files generated.")
 
 
 @app.command
@@ -119,8 +128,20 @@ def bracket(
     *,
     save: bool = True,
 ) -> None:
+    logger.info(f"Creating bracket for {league} league for season {season}.")
     data_constructor = DataConstructor(league=league)
-    data_constructor.generate_bracket(season=season, save=save)
+    data_constructor.create_bracket(season=season, save=save)
+    logger.info("Bracket creation complete.")
+
+
+@app.command
+def analysis(
+    league: str = "M",
+) -> None:
+    logger.info(f"Running analysis for {league} league.")
+    data_constructor = DataConstructor(league=league)
+    data_constructor.analysis()
+    logger.info("Analysis complete.")
 
 
 @app.command
@@ -130,7 +151,9 @@ def streamlit() -> None:
 
 @app.command
 def geocode() -> None:
+    logger.info("Starting geocoding process.")
     geocoding.geocode_cities()
+    logger.info("Geocoding process complete.")
 
 
 if __name__ == "__main__":
