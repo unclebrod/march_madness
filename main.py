@@ -5,7 +5,7 @@ import polars as pl
 from cyclopts import App
 from dotenv import find_dotenv, load_dotenv
 
-from march_madness import dashboard, geocoding
+from march_madness import geocoding
 from march_madness.loader import DataConstructor
 from march_madness.log import logger
 from march_madness.models.base import McmcParams, SviParams
@@ -142,11 +142,6 @@ def analysis(
     data_constructor = DataConstructor(league=league)
     data_constructor.analysis()
     logger.info("Analysis complete.")
-
-
-@app.command
-def streamlit() -> None:
-    dashboard.main()
 
 
 @app.command

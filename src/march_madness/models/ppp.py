@@ -298,7 +298,7 @@ class PointsPerPossessionTrainer(Trainer):
 
         self.model.fit(data=data, **kwargs)
 
-    def predict(self, df: pl.DataFrame, **kwargs) -> pl.DataFrame:
+    def predict(self, df: pl.DataFrame, *, save: bool = True, **kwargs) -> pl.DataFrame:
         self.predict_df = self._filter_dataframe(df)
         data = self.generate_data(self.predict_df, predict=True)
         samples = self.model.predict(data=data, **kwargs)
@@ -316,7 +316,7 @@ class PointsPerPossessionTrainer(Trainer):
         team2_win_prob = (team2_score > team1_score).mean(axis=0)
         team1_win_prob_adj = team1_win_prob / (team1_win_prob + team2_win_prob)
         team2_win_prob_adj = team2_win_prob / (team1_win_prob + team2_win_prob)
-        return self.predict_df.select(*[x for x in select_columns if x in self.predict_df.columns]).with_columns(
+        preds = self.predict_df.select(*[x for x in select_columns if x in self.predict_df.columns]).with_columns(
             team1_win_prob=pl.Series(team1_win_prob_adj.tolist()),
             team2_win_prob=pl.Series(team2_win_prob_adj.tolist()),
             team1_score=pl.Series(team1_score.mean(axis=0).tolist()),
@@ -328,6 +328,9 @@ class PointsPerPossessionTrainer(Trainer):
             spread=pl.Series(samples["spread"].mean(axis=0).tolist()),
             total=pl.Series(samples["total"].mean(axis=0).tolist()),
         )
+        if save:
+            preds.write_csv(OUTPUT_DIR / f"{self.league}/ppp/preds.csv")
+        return preds
 
     def generate_data(
         self,
@@ -373,12 +376,16 @@ class PointsPerPossessionTrainer(Trainer):
         season_classes = self.preprocessors["season_encoder"].classes_
         team_classes = self.preprocessors["team_encoder"].classes_
 
-        teams = self.data_loader.load_data(DataConfig.teams).select(
+        teams_select = [
             pl.col("TeamID").alias("team_id"),
             pl.col("TeamName").alias("team_name"),
-            pl.col("FirstD1Season").alias("first_d1_season"),
-            pl.col("LastD1Season").alias("last_d1_season"),
-        )
+        ]
+        if self.league == "M":
+            teams_select += [
+                pl.col("FirstD1Season").alias("first_d1_season"),
+                pl.col("LastD1Season").alias("last_d1_season"),
+            ]
+        teams = self.data_loader.load_data(DataConfig.teams).select(teams_select)
 
         for k, v in self.model.samples.items():
             summary = summarize_samples(v)

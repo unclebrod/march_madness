@@ -4,8 +4,9 @@ import polars as pl
 import streamlit as st
 
 from march_madness.loader import DataConfig, DataLoader
+from march_madness.utils import current_season
 
-SEASON = 2025  # TODO: can make this dynamic later
+SEASON = current_season()
 
 
 def get_item(df: pl.DataFrame, col: str) -> Any:
@@ -14,7 +15,7 @@ def get_item(df: pl.DataFrame, col: str) -> Any:
 
 st.title("Predicted Matchups")
 
-matchups = pl.read_csv(f"{st.session_state.output_dir}/results.csv")
+matchup_df = pl.read_csv(f"{st.session_state.output_dir}/preds.csv")
 
 data_loader = DataLoader(league=st.session_state.league)
 data_config = DataConfig()
@@ -35,34 +36,37 @@ with st.form("matchups"):
         team1_id = team_map[team1]
         team2_id = team_map[team2]
         teams_in_order = sorted([team1_id, team2_id])
-        matchup = matchups.filter(pl.col("ID").eq(f"{SEASON}_{teams_in_order[0]}_{teams_in_order[1]}"))
-        st.dataframe(matchup)
+        matchup = matchup_df.filter(pl.col("ID").eq(f"{SEASON}_{teams_in_order[0]}_{teams_in_order[1]}"))
+        # st.dataframe(matchup)
 
         cols = st.columns(2)
         team1 = get_item(matchup, "team1_name")
         team2 = get_item(matchup, "team2_name")
         with cols[0]:
-            st.metric(f"{team1} Win Probability", round(get_item(matchup, "Pred"), 3), border=True)
+            st.metric(f"{team1} Win Probability", round(get_item(matchup, "team1_win_prob"), 3), border=True)
             st.metric(
                 f"{team1} Score (Mean)",
-                round(get_item(matchup, "team1_score_mean"), 2),
+                round(get_item(matchup, "team1_score"), 2),
                 border=True,
             )
-            st.metric(f"{team1} Score (Median)", get_item(matchup, "team1_score_50"), border=True)
-            st.metric(f"{team1} Score (2.5%)", get_item(matchup, "team1_score_025"), border=True)
-            st.metric(f"{team1} Score (97.5%)", get_item(matchup, "team1_score_975"), border=True)
+            # st.metric(f"{team1} Score (Median)", get_item(matchup, "team1_score"), border=True)
+            # st.metric(f"{team1} Score (2.5%)", get_item(matchup, "team1_score_025"), border=True)
+            # st.metric(f"{team1} Score (97.5%)", get_item(matchup, "team1_score_975"), border=True)
         with cols[1]:
-            st.metric(f"{team2} Win Probability", round(get_item(matchup, "OppPred"), 3), border=True)
+            st.metric(f"{team2} Win Probability", round(get_item(matchup, "team2_win_prob"), 3), border=True)
             st.metric(
                 f"{team2} Score (Mean)",
-                round(get_item(matchup, "team2_score_mean"), 2),
+                round(get_item(matchup, "team2_score"), 2),
                 border=True,
             )
-            st.metric(f"{team2} Score (Median)", get_item(matchup, "team2_score_50"), border=True)
-            st.metric(f"{team2} Score (2.5%)", get_item(matchup, "team2_score_025"), border=True)
-            st.metric(f"{team2} Score (97.5%)", get_item(matchup, "team2_score_975"), border=True)
+            # st.metric(f"{team2} Score (Median)", get_item(matchup, "team2_score"), border=True)
+            # st.metric(f"{team2} Score (2.5%)", get_item(matchup, "team2_score_025"), border=True)
+            # st.metric(f"{team2} Score (97.5%)", get_item(matchup, "team2_score_975"), border=True)
 
-        estimated_possessions = matchup.select(
-            possessions=pl.col("team1_possessions_50").add(pl.col("team2_possessions_50")).truediv(2).round(2),
-        )["possessions"]
+        estimated_possessions = get_item(matchup, "possessions")
+        estimated_spread = get_item(matchup, "spread")
+        estimated_total = get_item(matchup, "total")
+
+        st.metric("Estimated Spread", round(estimated_spread, 2), border=True)
+        st.metric("Estimated Total", round(estimated_total, 2), border=True)
         st.metric("Estimated Possessions", value=estimated_possessions, border=True)

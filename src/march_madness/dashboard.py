@@ -21,8 +21,13 @@ def main():
     if "output_dir" not in st.session_state:
         st.session_state.output_dir = None
     league = st.sidebar.radio("League:", ["M", "W"])
+    model = st.sidebar.radio("Model:", ["ppp", "elo"])
+
     st.session_state.league = league
-    st.session_state.output_dir = OUTPUT_DIR / league
+    st.session_state.model = model
+
+    st.session_state.output_dir = OUTPUT_DIR / league / model
+    st.session_state.output_base = OUTPUT_DIR
 
     pages = [
         st.Page(
@@ -54,3 +59,7 @@ def main():
 
     pg = st.navigation(pages)
     pg.run()
+
+
+if __name__ == "__main__":
+    main()

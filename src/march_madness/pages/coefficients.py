@@ -6,31 +6,43 @@ alt.renderers.set_embed_options(theme="dark")
 
 st.title("Model Coefficients")
 
-coefs = pl.read_csv(f"{st.session_state.output_dir}/coefs.csv").sort("value_50", descending=True)
+coef_df = pl.read_csv(f"{st.session_state.output_dir}/coefs.csv").sort("percentile_500", descending=True)
+
+# Filter coefficients based on user selection
+coef_options = coef_df["name"].unique().sort().to_list()
+selected_coefs = st.multiselect("Select coefficients to display:", options=coef_options, default=coef_options)
+coef_df = coef_df.filter(pl.col("name").is_in(selected_coefs))
 
 bar = (
-    alt.Chart(coefs)
+    alt.Chart(coef_df)
     .mark_errorbar()
     .encode(
-        alt.X("value_025:Q").title("Value"),
-        alt.X2("value_975:Q"),
-        alt.Y("coefficient:N", sort=alt.EncodingSortField(field="-value_50")).title("Coefficient"),
+        alt.X("percentile_025:Q").title("Value"),
+        alt.X2("percentile_975:Q"),
+        alt.Y("name:N", sort=alt.EncodingSortField(field="-percentile_500")).title("Coefficient"),
     )
 )
-
 point = (
-    alt.Chart(coefs)
+    alt.Chart(coef_df)
     .mark_point(
         filled=True,
         color="black",
     )
     .encode(
-        alt.X("value_50:Q"),
-        alt.Y("coefficient:N", sort=alt.EncodingSortField(field="-value_50")),
+        alt.X("percentile_500:Q"),
+        alt.Y("name:N", sort=alt.EncodingSortField(field="-percentile_500")),
     )
 )
-
 chart = bar + point
-st.altair_chart(chart, use_container_width=True, theme=None)
+st.altair_chart(chart, width="stretch", theme=None)
 
-st.dataframe(coefs)
+st.dataframe(
+    coef_df.select(
+        "name",
+        "mean",
+        "percentile_025",
+        "percentile_500",
+        "percentile_975",
+        "std",
+    ).sort("percentile_500", descending=True)
+)
