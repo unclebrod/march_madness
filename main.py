@@ -5,7 +5,7 @@ import polars as pl
 from cyclopts import App
 from dotenv import find_dotenv, load_dotenv
 
-from march_madness import geocoding
+from march_madness import geocoding, odds
 from march_madness.loader import DataConstructor
 from march_madness.log import logger
 from march_madness.models.base import McmcParams, SviParams
@@ -149,6 +149,13 @@ def geocode() -> None:
     logger.info("Starting geocoding process.")
     geocoding.geocode_cities()
     logger.info("Geocoding process complete.")
+
+
+@app.command
+def espn() -> None:
+    logger.info("Fetching odds from ESPN.")
+    odds.main()
+    logger.info("Odds fetching complete.")
 
 
 if __name__ == "__main__":
