@@ -3,7 +3,7 @@ Codebase for my submission to Kaggle's yearly March Machine Learning Mania compe
 
 ## Methodology
 
-My current model is a probabilistic model, built using the [numpyro](https://num.pyro.ai/en/stable/) library. For each game, I estimate the number of possessions using [Ken Pomeroy's methodology](https://kenpom.com/blog/the-possession/). The model estimates pace, offensive, and defensive ratings (random effects) for each team, controlling for the opponent.
+My current model is a probabilistic model, built using the [numpyro](https://num.pyro.ai/en/stable/) library. For each game, I calculate the number of possessions from the box score data using [Ken Pomeroy's methodology](https://kenpom.com/blog/the-possession/). The model estimates pace, offensive, and defensive ratings (random effects) for each team, controlling for the opponent.
 
 Points per possession are a linear combination of a team's offensive rating, the opponent's defensive rating, and fixed effects (including features for rest, travel, and tournament indicators). Home court is also included as a random effect, allowing this value to be different for different teams. For example, Denver has a higher home court advantage given its altitude. 
 
