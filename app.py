@@ -406,7 +406,7 @@ def _(alt, mo, pl):
             .encode(
                 y=alt.Y("team_name", sort=alt.EncodingSortField(field=rnd, order="descending"), title="Team Name"),
                 x=alt.X(rnd, title="Advancement Probability"),
-                # tooltip=[alt.Tooltip(f"{rnd}:Q")],
+                # tooltip=[alt.Tooltip(f"{rnd}:Q")],  # TODO: tooltip not working in sandbox mode for some reason
             )
             .properties(
                 width="container", 
