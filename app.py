@@ -34,7 +34,14 @@ def _(mo):
 @app.cell
 def _(mo):
     image_path = mo.notebook_location() / "assets" / "bball-logo.png"
+    print(image_path)
     mo.image(str(image_path))
+    return
+
+
+@app.cell
+def _(mo):
+    mo.notebook_location()
     return
 
 
