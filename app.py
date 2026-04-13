@@ -33,7 +33,8 @@ def _(mo):
 
 @app.cell
 def _(mo):
-    mo.image(f"{mo.notebook_location()}/assets/bball-logo.png")
+    image_path = mo.notebook_location() / "assets" / "bball-logo.png"
+    mo.image(str(image_path))
     return
 
 
