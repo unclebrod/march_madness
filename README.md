@@ -1,6 +1,10 @@
 # March Madness
 Codebase for my submission to Kaggle's yearly March Machine Learning Mania competition.
 
+## Site
+
+Check out my website for this project. It expands on the explanations below, and it also has an interactive dashboard for viewing model insights: https://unclebrod.github.io/march-madness/
+
 ## Methodology
 
 My current model is a probabilistic model, built using the [numpyro](https://num.pyro.ai/en/stable/) library. For each game, I calculate the number of possessions from the box score data using [Ken Pomeroy's methodology](https://kenpom.com/blog/the-possession/). The model estimates pace, offensive, and defensive ratings (random effects) for each team, controlling for the opponent.
