@@ -17,7 +17,7 @@ def _():
 
 @app.cell
 def _(alt):
-    alt.renderers.set_embed_options(theme="fivethirtyeight")
+    alt.renderers.set_embed_options(theme="fivethirtyeight");
     return
 
 
@@ -33,7 +33,7 @@ def _(mo):
 
 @app.cell
 def _(mo):
-    mo.image("./assets/bball-logo.png")
+    mo.image(f"{mo.notebook_location()}/assets/bball-logo.png")
     return
 
 
@@ -184,8 +184,8 @@ def _(mo):
 
 
 @app.cell
-def _(league, model):
-    output_dir = f"./assets/{league.value}/{model.value}"
+def _(league, mo, model):
+    output_dir = f"{mo.notebook_location()}/assets/{league.value}/{model.value}"
     SEASON = 2026
     return SEASON, output_dir
 
