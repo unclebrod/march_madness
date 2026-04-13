@@ -26,7 +26,7 @@ def _():
 
 @app.cell
 def _(alt):
-    alt.renderers.set_embed_options(theme="fivethirtyeight")
+    alt.renderers.set_embed_options(theme="fivethirtyeight");  # fmt: skip
     return
 
 
