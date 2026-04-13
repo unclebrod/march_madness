@@ -26,7 +26,7 @@ def _():
 
 @app.cell
 def _(alt):
-    alt.renderers.set_embed_options(theme="fivethirtyeight");
+    alt.renderers.set_embed_options(theme="fivethirtyeight")
     return
 
 
@@ -42,7 +42,7 @@ def _(mo):
 
 @app.cell
 def _(mo):
-    image_path = mo.notebook_location() / "assets" / "bball-logo.png"
+    image_path = mo.notebook_location() / "public" / "bball-logo.png"
     mo.image(str(image_path))
     return
 
@@ -195,7 +195,7 @@ def _(mo):
 
 @app.cell
 def _(league, mo, model):
-    output_dir = mo.notebook_location() / "assets" / league.value / model.value
+    output_dir = mo.notebook_location() / "public" / league.value / model.value
     SEASON = 2026
     return SEASON, output_dir
 
@@ -409,7 +409,7 @@ def _(alt, mo, pl):
                 # tooltip=[alt.Tooltip(f"{rnd}:Q")],  # TODO: tooltip not working in sandbox mode for some reason
             )
             .properties(
-                width="container", 
+                width="container",
                 title=f"Probability of Advacement to the {inverse_round_map[rnd]}",
             )
         )
