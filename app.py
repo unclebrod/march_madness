@@ -186,7 +186,7 @@ def _(mo):
 
 @app.cell
 def _(league, mo, model):
-    output_dir = f"{mo.notebook_location()}/assets/{league.value}/{model.value}"
+    output_dir = mo.notebook_location() / "assets" / league.value / model.value
     SEASON = 2026
     return SEASON, output_dir
 
@@ -228,7 +228,7 @@ def _(mo):
 
 @app.cell
 def _(output_dir, pl):
-    matchup_df = pl.read_csv(f"{output_dir}/preds.csv")
+    matchup_df = pl.read_csv(str(output_dir / "preds.csv"))
     team_df = pl.concat(
         [
             matchup_df.select(
@@ -359,7 +359,7 @@ def _(mo):
 
 @app.cell
 def _(output_dir, pl):
-    advance_df = pl.read_csv(f"{output_dir}/advance.csv").rename({"": "team_name"})
+    advance_df = pl.read_csv(str(output_dir / "advance.csv")).rename({"": "team_name"})
     return (advance_df,)
 
 
@@ -440,7 +440,7 @@ def _(mo):
 
 @app.cell
 def _(output_dir, pl):
-    ratings_df = pl.read_csv(f"{output_dir}/season_team_coefs.csv")
+    ratings_df = pl.read_csv(str(output_dir / "season_team_coefs.csv"))
     return (ratings_df,)
 
 
@@ -671,7 +671,7 @@ def _(mo):
 
 @app.cell
 def _(output_dir, pl):
-    coef_df = pl.read_csv(f"{output_dir}/coefs.csv").sort("percentile_500", descending=True)
+    coef_df = pl.read_csv(str(output_dir / "coefs.csv")).sort("percentile_500", descending=True)
     return (coef_df,)
 
 
