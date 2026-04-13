@@ -1,6 +1,15 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "altair",
+#     "marimo",
+#     "polars",
+# ]
+# ///
+
 import marimo
 
-__generated_with = "0.23.0"
+__generated_with = "0.23.1"
 app = marimo.App(width="medium")
 
 
@@ -34,14 +43,7 @@ def _(mo):
 @app.cell
 def _(mo):
     image_path = mo.notebook_location() / "assets" / "bball-logo.png"
-    print(image_path)
     mo.image(str(image_path))
-    return
-
-
-@app.cell
-def _(mo):
-    mo.notebook_location()
     return
 
 
@@ -402,11 +404,14 @@ def _(alt, mo, pl):
             alt.Chart(df.sort(rnd, descending=True))
             .mark_bar()
             .encode(
-                alt.Y("team_name", sort=alt.EncodingSortField(field=rnd, order="descending")).title("Team Name"),
-                alt.X(rnd).title("Advancement Probability"),
-                tooltip=["team_name", rnd],
+                y=alt.Y("team_name", sort=alt.EncodingSortField(field=rnd, order="descending"), title="Team Name"),
+                x=alt.X(rnd, title="Advancement Probability"),
+                # tooltip=[alt.Tooltip(f"{rnd}:Q")],
             )
-            .properties(width="container", title=f"Probability of Advacement to the {inverse_round_map[rnd]}")
+            .properties(
+                width="container", 
+                title=f"Probability of Advacement to the {inverse_round_map[rnd]}",
+            )
         )
         return mo.ui.altair_chart(
             chart=chart,
