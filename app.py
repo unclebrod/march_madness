@@ -12,9 +12,7 @@ def _():
     import marimo as mo
     import polars as pl
 
-    from march_madness.settings import DATA_DIR, OUTPUT_DIR
-
-    return Any, DATA_DIR, OUTPUT_DIR, alt, mo, pl
+    return Any, alt, mo, pl
 
 
 @app.cell
@@ -34,8 +32,8 @@ def _(mo):
 
 
 @app.cell
-def _(DATA_DIR, mo):
-    mo.image(f"{DATA_DIR}/bball-logo.png")
+def _(mo):
+    mo.image("./assets/bball-logo.png")
     return
 
 
@@ -186,8 +184,8 @@ def _(mo):
 
 
 @app.cell
-def _(OUTPUT_DIR, league, model):
-    output_dir = OUTPUT_DIR / league.value / model.value
+def _(league, model):
+    output_dir = f"./assets/{league.value}/{model.value}"
     SEASON = 2026
     return SEASON, output_dir
 
@@ -359,8 +357,8 @@ def _(mo):
 
 
 @app.cell
-def _(OUTPUT_DIR, league, pl):
-    advance_df = pl.read_csv(f"{OUTPUT_DIR / league.value}/advance.csv").rename({"": "team_name"})
+def _(output_dir, pl):
+    advance_df = pl.read_csv(f"{output_dir}/advance.csv").rename({"": "team_name"})
     return (advance_df,)
 
 
@@ -376,19 +374,17 @@ def _():
         "Champion": "R6",
     }
     inverse_round_map = {v: k for k, v in round_map.items()}
-    return (inverse_round_map,)
+    return inverse_round_map, round_map
 
 
-app._unparsable_cell(
-    r"""
+@app.cell
+def _(mo, round_map):
     round_selection = mo.ui.radio(
         label="Select a round (probability of making it to the selected round):",
-        options=,
+        options=round_map,
         value="Champion",
     )
-    """,
-    name="_",
-)
+    return (round_selection,)
 
 
 @app.cell
